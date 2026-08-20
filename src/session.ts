@@ -100,6 +100,13 @@ import {
 import { DEFAULT_TMUX_HISTORY_LIMIT } from './config/terminal-history.js';
 import { EXEC_TIMEOUT_MS } from './config/exec-timeout.js';
 import {
+  isExternalCliMode as _registryIsExternalCli,
+  isAltScreenStripMode as _registryIsAltScreenStrip,
+  isMuxAltScreenOnlyStripMode as _registryIsMuxNarrowStrip,
+  getModeLabel as _registryGetModeLabel,
+  needsColorterm as _registryNeedsColorterm,
+} from './config/cli-registry.js';
+import {
   buildInteractiveArgs,
   buildPromptArgs,
   buildClaudeEnv,
@@ -171,26 +178,11 @@ const NEWLINE_SPLIT_PATTERN = /\r?\n/;
 
 /** True for external-CLI run modes (non-Claude) that use their own TUI and output format. */
 export function isExternalCliMode(mode: SessionMode): boolean {
-  return mode === 'opencode' || mode === 'codex' || mode === 'gemini' || mode === 'antigravity' || mode === 'pi';
+  return _registryIsExternalCli(mode);
 }
 
 function getModeLabel(mode: SessionMode): string {
-  switch (mode) {
-    case 'opencode':
-      return 'OpenCode';
-    case 'codex':
-      return 'Codex';
-    case 'gemini':
-      return 'Gemini';
-    case 'antigravity':
-      return 'Antigravity';
-    case 'pi':
-      return 'Pi';
-    case 'shell':
-      return 'Shell';
-    case 'claude':
-      return 'Claude';
-  }
+  return _registryGetModeLabel(mode);
 }
 
 /**
@@ -218,38 +210,11 @@ function getModeLabel(mode: SessionMode): string {
  * vim inside a tmux `shell` session.
  */
 export function isAltScreenStripMode(mode: SessionMode): boolean {
-  return mode === 'codex' || mode === 'claude' || mode === 'gemini';
+  return _registryIsAltScreenStrip(mode);
 }
 
-/**
- * Modes that need the NARROW strip: alt-screen toggles only, leaving `\x1b[3J`
- * and the mouse-tracking DECSETs alone. Applies to every mode `isAltScreenStripMode`
- * excludes, but ONLY when the session is tmux-backed (`useMux`).
- *
- * The bug (issue #205): the tmux CLIENT emits `smcup` (`\x1b[?1049h`) as its first
- * bytes on attach, before any program has run. Unstripped, xterm.js parks in the
- * alternate buffer for the whole session, where `baseY` is pinned at 0 (no
- * scrollback to reach, so touch scrolling is a no-op) and xterm's own wheel handler
- * translates the wheel into `\x1bOA`/`\x1bOB` cursor keys — which readline receives
- * as shell history navigation. Both reported symptoms, one sequence.
- *
- * Why this is safe under tmux, despite the old "shell must keep the alt screen for
- * vim/less/htop" reasoning: tmux is a full terminal emulator and NEVER forwards a
- * pane's alt-screen toggles to its client, it repaints instead. Captured from a real
- * attach, `\x1b[?1049h` appears exactly once (at attach) and vim/less/htop sessions
- * inside the pane emit zero. So the only thing stripped here is tmux's own smcup.
- *
- * Why it is gated on `useMux`: `startShell()`/`startInteractive()` fall back to a
- * DIRECT PTY when mux creation fails. There the inner program's `\x1b[?1049h` really
- * does reach xterm, and stripping it would break vim/less/htop for real.
- *
- * Why it is narrower than the full strip: with tmux `mouse off`, a mouse-aware
- * program in the pane (htop, vim with `set mouse=a`) still gets its DECSETs passed
- * through to the client, so stripping those would break its mouse support. And
- * `\x1b[3J` from a user's own `clear` is a deliberate "wipe my scrollback".
- */
 export function isMuxAltScreenOnlyStripMode(mode: SessionMode, useMux: boolean): boolean {
-  return useMux && !isAltScreenStripMode(mode);
+  return _registryIsMuxNarrowStrip(mode, useMux);
 }
 
 // Note: Claude CLI PATH resolution moved to session-cli-builder.ts (buildClaudeEnv)
@@ -1463,11 +1428,8 @@ export class Session extends EventEmitter {
           cols: ptyCols,
           rows: ptyRows,
           cwd: resolveMuxAttachCwd(this.workingDir, this._remote, this._docker),
-          // COD-75: codex/gemini/antigravity/pi get COLORTERM=truecolor — mirrors buildEnvExports()
-          // in tmux-manager.ts so the attach client and the tmux session agree.
-          env: buildMuxAttachEnv(
-            this.mode === 'codex' || this.mode === 'gemini' || this.mode === 'antigravity' || this.mode === 'pi'
-          ),
+          // mirrors buildEnvExports() in tmux-manager.ts — registry-driven
+          env: buildMuxAttachEnv(_registryNeedsColorterm(this.mode)),
         })
       );
     } catch (spawnErr) {

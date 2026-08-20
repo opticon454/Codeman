@@ -30,6 +30,7 @@ export { wrapWithNice } from './nice-wrapper.js';
 export { resolveLocalShell, loginShellArgs } from './shell-resolver.js';
 export { findClaudeDir, getAugmentedPath, getClaudeCliVersion, getClaudeBinaryPath } from './claude-cli-resolver.js';
 export { spawnPtyWithHelperRepair } from './node-pty-repair.js';
+export { resolveCliDir, isCliAvailable, resetCliCache } from './generic-cli-resolver.js';
 export { resolveOpenCodeDir } from './opencode-cli-resolver.js';
 export { resolveCodexDir, isCodexAvailable } from './codex-cli-resolver.js';
 export { resolveGeminiDir, isGeminiAvailable } from './gemini-cli-resolver.js';

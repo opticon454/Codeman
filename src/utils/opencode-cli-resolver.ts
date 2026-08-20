@@ -1,71 +1,9 @@
 /**
- * @fileoverview Resolve the OpenCode CLI binary across common install paths.
- *
- * Mirrors claude-cli-resolver.ts pattern. Finds the `opencode` binary
- * and provides an augmented PATH string for tmux sessions.
- *
+ * @fileoverview Thin shim — delegates to generic-cli-resolver.
  * @module utils/opencode-cli-resolver
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
-import { EXEC_TIMEOUT_MS } from '../config/exec-timeout.js';
+import { resolveCliDir, isCliAvailable } from './generic-cli-resolver.js';
 
-/** Common directories where the OpenCode CLI binary may be installed */
-const OPENCODE_SEARCH_DIRS = [
-  join(homedir(), '.opencode', 'bin'), // Default install location
-  join(homedir(), '.local', 'bin'), // Alternative install location
-  '/usr/local/bin', // Homebrew / system
-  join(homedir(), 'go', 'bin'), // Go install
-  join(homedir(), '.bun', 'bin'), // Bun global
-  join(homedir(), '.npm-global', 'bin'), // npm global
-  join(homedir(), 'bin'), // User bin
-];
-
-/** Cached directory containing the opencode binary (empty string = searched but not found) */
-let _openCodeDir: string | null = null;
-
-/**
- * Finds the directory containing the `opencode` binary.
- * Checks `which opencode` first, then falls back to common install locations.
- * Result is cached for subsequent calls.
- *
- * @returns Directory path, or null if not found
- */
-export function resolveOpenCodeDir(): string | null {
-  if (_openCodeDir !== null) return _openCodeDir || null;
-
-  // Try `which` first (respects current PATH)
-  try {
-    const result = execSync('which opencode', {
-      encoding: 'utf-8',
-      timeout: EXEC_TIMEOUT_MS,
-    }).trim();
-    if (result && existsSync(result)) {
-      _openCodeDir = dirname(result);
-      return _openCodeDir;
-    }
-  } catch {
-    // OpenCode not in PATH, will check common locations
-  }
-
-  // Fallback: check common installation directories
-  for (const dir of OPENCODE_SEARCH_DIRS) {
-    if (existsSync(join(dir, 'opencode'))) {
-      _openCodeDir = dir;
-      return _openCodeDir;
-    }
-  }
-
-  _openCodeDir = ''; // mark as searched, not found
-  return null;
-}
-
-/**
- * Check if OpenCode CLI is available on the system.
- */
-export function isOpenCodeAvailable(): boolean {
-  return resolveOpenCodeDir() !== null;
-}
+export const resolveOpenCodeDir = (): string | null => resolveCliDir('opencode');
+export const isOpenCodeAvailable = (): boolean => isCliAvailable('opencode');

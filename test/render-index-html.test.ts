@@ -13,10 +13,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { WebServer } from '../src/web/server.js';
 import { isClaudeAvailable } from '../src/utils/claude-cli-resolver.js';
-import { isOpenCodeAvailable } from '../src/utils/opencode-cli-resolver.js';
-import { isCodexAvailable } from '../src/utils/codex-cli-resolver.js';
-import { isGeminiAvailable } from '../src/utils/gemini-cli-resolver.js';
-import { isAntigravityAvailable } from '../src/utils/antigravity-cli-resolver.js';
+import { isCliAvailable } from '../src/utils/generic-cli-resolver.js';
 import { isPiAvailable } from '../src/utils/pi-cli-resolver.js';
 import { isCloudflaredAvailable } from '../src/utils/cloudflared-resolver.js';
 import { isGitAvailable } from '../src/git-clone.js';
@@ -28,21 +25,10 @@ vi.mock('../src/utils/claude-cli-resolver.js', () => ({
   isClaudeAvailable: vi.fn(() => false),
   findClaudeDir: vi.fn(() => null),
 }));
-vi.mock('../src/utils/opencode-cli-resolver.js', () => ({
-  isOpenCodeAvailable: vi.fn(() => false),
-  resolveOpenCodeDir: vi.fn(() => null),
-}));
-vi.mock('../src/utils/codex-cli-resolver.js', () => ({
-  isCodexAvailable: vi.fn(() => false),
-  resolveCodexDir: vi.fn(() => null),
-}));
-vi.mock('../src/utils/gemini-cli-resolver.js', () => ({
-  isGeminiAvailable: vi.fn(() => false),
-  resolveGeminiDir: vi.fn(() => null),
-}));
-vi.mock('../src/utils/antigravity-cli-resolver.js', () => ({
-  isAntigravityAvailable: vi.fn(() => false),
-  resolveAntigravityDir: vi.fn(() => null),
+vi.mock('../src/utils/generic-cli-resolver.js', () => ({
+  isCliAvailable: vi.fn(() => false),
+  resolveCliDir: vi.fn(() => null),
+  resetCliCache: vi.fn(),
 }));
 vi.mock('../src/utils/pi-cli-resolver.js', () => ({
   isPiAvailable: vi.fn(() => false),
@@ -133,10 +119,7 @@ describe('WebServer.renderIndexHtml', () => {
 
   it('reports every tool the welcome buttons, run menu and Codex tab gate on', async () => {
     vi.mocked(isClaudeAvailable).mockReturnValue(true);
-    vi.mocked(isOpenCodeAvailable).mockReturnValue(false);
-    vi.mocked(isCodexAvailable).mockReturnValue(true);
-    vi.mocked(isGeminiAvailable).mockReturnValue(false);
-    vi.mocked(isAntigravityAvailable).mockReturnValue(false);
+    vi.mocked(isCliAvailable).mockImplementation((id) => id === 'codex');
     vi.mocked(isPiAvailable).mockReturnValue(true);
     vi.mocked(isCloudflaredAvailable).mockReturnValue(true);
     vi.mocked(isGitAvailable).mockReturnValue(true);
@@ -145,33 +128,22 @@ describe('WebServer.renderIndexHtml', () => {
     const flags = JSON.parse(html.match(/window\.__codemanCliAvailable=(\{.*?\});/)![1]);
     // Every key must be PRESENT, not merely truthy where installed: the client
     // treats a missing key as available, so a dropped key silently un-gates.
-    expect(flags).toEqual({
-      claude: true,
-      opencode: false,
-      codex: true,
-      gemini: false,
-      antigravity: false,
-      pi: true,
-      cloudflared: true,
-      git: true,
-    });
+    expect(flags.claude).toBe(true);
+    expect(flags.codex).toBe(true);
+    expect(flags.opencode).toBe(false);
+    expect(flags.gemini).toBe(false);
+    expect(flags.antigravity).toBe(false);
+    expect(flags.pi).toBe(true);
+    expect(flags.cloudflared).toBe(true);
+    expect(flags.git).toBe(true);
   });
 
   it('still emits the object when nothing at all is installed', async () => {
-    // The all-false case is the one that matters most and the easiest to get
-    // wrong by only injecting when something resolves.
-    for (const probe of [
-      isClaudeAvailable,
-      isOpenCodeAvailable,
-      isCodexAvailable,
-      isGeminiAvailable,
-      isAntigravityAvailable,
-      isPiAvailable,
-      isCloudflaredAvailable,
-      isGitAvailable,
-    ]) {
-      vi.mocked(probe).mockReturnValue(false);
-    }
+    vi.mocked(isClaudeAvailable).mockReturnValue(false);
+    vi.mocked(isCliAvailable).mockReturnValue(false);
+    vi.mocked(isPiAvailable).mockReturnValue(false);
+    vi.mocked(isCloudflaredAvailable).mockReturnValue(false);
+    vi.mocked(isGitAvailable).mockReturnValue(false);
     const { server } = makeServer({});
     const html = await render(server);
     expect(html).toContain('window.__codemanCliAvailable=');
@@ -180,7 +152,7 @@ describe('WebServer.renderIndexHtml', () => {
   });
 
   it('skips the probe for a solo window, which has no welcome screen or run menu', async () => {
-    vi.mocked(isCodexAvailable).mockReturnValue(true);
+    vi.mocked(isCliAvailable).mockReturnValue(true);
     const { server } = makeServer({});
     const html = await render(server, 'sess-123');
     expect(html).not.toContain('__codemanCliAvailable');

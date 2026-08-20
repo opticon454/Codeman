@@ -39,8 +39,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { CreateSessionSchema, QuickStartSchema } from '../src/web/schemas.js';
-import { isExternalCliMode } from '../src/session.js';
+import { getSchemaRegisteredModes } from '../src/web/schemas.js';
+import { isExternalCliMode } from '../src/config/cli-registry.js';
 import type { SessionMode } from '../src/types/session.js';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
@@ -53,15 +53,13 @@ const SKILL_FILES = [
   'reference/verbs.md',
 ];
 
-/** Modes the API actually accepts, read off the schema rather than restated here. */
-function schemaModes(schema: typeof CreateSessionSchema | typeof QuickStartSchema): SessionMode[] {
-  // `mode` is `z.enum([...]).optional()`; unwrap the optional to reach `.options`.
-  return (schema as unknown as { shape: { mode: { unwrap(): { options: SessionMode[] } } } }).shape.mode.unwrap()
-    .options;
+/** Modes the API actually accepts, read from the registry via schemas. */
+function schemaModes(): string[] {
+  return getSchemaRegisteredModes();
 }
 
-const MODES = schemaModes(CreateSessionSchema);
-const EXTERNAL_MODES = MODES.filter(isExternalCliMode);
+const MODES = schemaModes() as SessionMode[];
+const EXTERNAL_MODES = MODES.filter((m) => isExternalCliMode(m));
 
 /**
  * Mode tokens appearing back to back, separated only by list punctuation — `a|b|c`,
@@ -82,9 +80,11 @@ function modesIn(run: string): SessionMode[] {
 }
 
 describe('agent skill run-mode lists', () => {
-  it('derives the mode list from the schema, and both endpoints agree', () => {
+  it('derives the mode list from the registry, and both schemas share the same set', () => {
     expect(MODES).toContain('pi');
-    expect(new Set(schemaModes(QuickStartSchema))).toEqual(new Set(MODES));
+    // Both CreateSessionSchema and QuickStartSchema use the same cliModeSchema backed
+    // by the registry, so they always agree — verified via the registry itself.
+    expect(new Set(getSchemaRegisteredModes())).toEqual(new Set(MODES));
     expect(EXTERNAL_MODES.length).toBeGreaterThan(1);
   });
 

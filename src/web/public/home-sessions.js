@@ -70,15 +70,10 @@ const HOME_SESSIONS_PILL_LABEL = {
   done: 'done',
 };
 
-/** Short backend badge, mirroring `.tab-mode` in the tab strip. */
-const HOME_SESSIONS_MODE_BADGE = {
-  shell: 'sh',
-  opencode: 'oc',
-  codex: 'cx',
-  gemini: 'gm',
-  antigravity: 'ag',
-  pi: 'pi',
-};
+/** Short backend badge — derived from the registry at call time so overlay CLIs appear. */
+function getHomeSessionsModeBadge(mode) {
+  return mode ? CodemanCliRegistry.shortBadge(mode) : '';
+}
 
 Object.assign(CodemanApp.prototype, {
   // ═══════════════════════════════════════════════════════════════
@@ -202,7 +197,7 @@ Object.assign(CodemanApp.prototype, {
         orderIndex,
         name: this.getSessionName ? this.getSessionName(session) : session.name || id.slice(0, 8),
         mode,
-        modeBadge: HOME_SESSIONS_MODE_BADGE[mode] || '',
+        modeBadge: getHomeSessionsModeBadge(mode),
         caseName: matched ? matched.name : '',
         dir: this._shortenHomePath ? this._shortenHomePath(session.workingDir) : session.workingDir || '',
         state,

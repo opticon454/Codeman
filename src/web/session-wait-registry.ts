@@ -58,6 +58,7 @@
  */
 
 import { stripAnsi } from '../utils/index.js';
+import { hooksAvailableForMode as _registryHooksAvailable } from '../config/cli-registry.js';
 import {
   MAX_WAITERS_PER_SESSION,
   MAX_WAITERS_PER_OWNER,
@@ -182,7 +183,7 @@ const HOOK_ONLY_SIGNALS: readonly WaitSignal[] = ['stop', 'blocked'];
  * infinite-wait-dressed-as-a-timeout this guard exists to prevent.
  */
 export function hooksAvailableForMode(mode: SessionMode): boolean {
-  return mode === 'claude';
+  return _registryHooksAvailable(mode);
 }
 
 /** Outcome of resolving a caller-supplied wait target against a session's mode. */

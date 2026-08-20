@@ -2235,17 +2235,7 @@ class CodemanApp {
 
   _getResponseViewerAgentLabel() {
     const mode = this.sessions.get(this.activeSessionId)?.mode;
-    return mode === 'codex'
-      ? 'Codex'
-      : mode === 'gemini'
-        ? 'Gemini'
-        : mode === 'antigravity'
-          ? 'Antigravity'
-          : mode === 'pi'
-            ? 'Pi'
-            : mode === 'opencode'
-              ? 'OpenCode'
-              : 'Claude';
+    return mode ? CodemanCliRegistry.label(mode) : 'Claude';
   }
 
   async toggleResponseViewer() {
@@ -3527,6 +3517,8 @@ class CodemanApp {
   }
 
   handleInit(data) {
+    // Load CLI registry first so subsequent UI renders use up-to-date entries
+    CodemanCliRegistry.load().catch(() => {});
     // Clear the init fallback timer since we got data
     this._clearTimer('_initFallbackTimer');
     const gen = ++this._initGeneration;
@@ -4725,7 +4717,7 @@ class CodemanApp {
           <span class="tab-status ${status}" aria-hidden="true"></span>
           <span class="tab-info">
             <span class="tab-name-row">
-              ${mode === 'shell' ? '<span class="tab-mode shell" aria-hidden="true">sh</span>' : mode === 'opencode' ? '<span class="tab-mode opencode" aria-hidden="true">oc</span>' : mode === 'codex' ? '<span class="tab-mode codex" aria-hidden="true">cx</span>' : mode === 'gemini' ? '<span class="tab-mode gemini" aria-hidden="true">gm</span>' : mode === 'antigravity' ? '<span class="tab-mode antigravity" aria-hidden="true">ag</span>' : mode === 'pi' ? '<span class="tab-mode pi" aria-hidden="true">pi</span>' : ''}
+              ${(mode && mode !== 'claude') ? `<span class="tab-mode ${mode}" aria-hidden="true">${CodemanCliRegistry.shortBadge(mode)}</span>` : ''}
               <span class="tab-name" data-session-id="${id}">${escapeHtml(tabLabel)}</span>
               <span class="tab-detached-badge" aria-hidden="true">detached</span>
             </span>
@@ -6049,17 +6041,7 @@ class CodemanApp {
     // Update kill button text based on session mode
     const killTitle = document.getElementById('closeConfirmKillTitle');
     if (killTitle) {
-      killTitle.textContent = session.mode === 'opencode'
-        ? 'Kill Tmux & OpenCode'
-        : session.mode === 'codex'
-          ? 'Kill Tmux & Codex'
-          : session.mode === 'gemini'
-            ? 'Kill Tmux & Gemini'
-            : session.mode === 'antigravity'
-              ? 'Kill Tmux & Antigravity'
-              : session.mode === 'pi'
-                ? 'Kill Tmux & Pi'
-                : 'Kill Tmux & Claude Code';
+      killTitle.textContent = `Kill Tmux & ${CodemanCliRegistry.label(session.mode || 'claude')}`;
     }
 
     document.getElementById('closeConfirmModal').classList.add('active');

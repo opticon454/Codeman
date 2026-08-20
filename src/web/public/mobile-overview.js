@@ -44,18 +44,17 @@ const MOBILE_OVERVIEW_PHONE_QUERY = '(max-width: 430px)';
 const MOBILE_OVERVIEW_PAST_LIMIT = 8;
 
 /**
- * Backends offered by the Run picker, mirroring the toolbar's run-mode menu
- * (`#runModeMenu` in index.html). `short` is the badge on the Run button itself.
+ * Backends offered by the Run picker — derived from the CLI registry so overlay
+ * entries appear automatically. `short` is the badge on the Run button itself.
+ * Built lazily since the registry may not be loaded at module-parse time.
  */
-const MOBILE_OVERVIEW_RUN_MODES = [
-  { mode: 'claude', label: 'Claude Code', short: 'Claude' },
-  { mode: 'opencode', label: 'OpenCode', short: 'OpenCode' },
-  { mode: 'codex', label: 'Codex', short: 'Codex' },
-  { mode: 'gemini', label: 'Gemini', short: 'Gemini' },
-  { mode: 'antigravity', label: 'Antigravity', short: 'Antigravity' },
-  { mode: 'pi', label: 'Pi', short: 'Pi' },
-  { mode: 'shell', label: 'Terminal / Shell', short: 'Shell' },
-];
+function getMobileOverviewRunModes() {
+  return CodemanCliRegistry.all().map(e => ({
+    mode: e.id,
+    label: e.id === 'claude' ? 'Claude Code' : e.id === 'shell' ? 'Terminal / Shell' : e.label,
+    short: e.label,
+  }));
+}
 
 /** Pill copy per state. Kept short: a phone row has ~90px for it. */
 const MOBILE_OVERVIEW_PILL_LABEL = {
@@ -501,7 +500,7 @@ Object.assign(CodemanApp.prototype, {
     const runMode = document.createElement('span');
     runMode.className = 'mobile-overview-run-mode';
     runMode.setAttribute('data-i18n-skip', '');
-    runMode.textContent = MOBILE_OVERVIEW_RUN_MODES.find((m) => m.mode === mode)?.short || mode;
+    runMode.textContent = getMobileOverviewRunModes().find((m) => m.mode === mode)?.short || mode;
     run.appendChild(runMode);
     group.appendChild(run);
 
@@ -556,7 +555,7 @@ Object.assign(CodemanApp.prototype, {
     menu.className = 'mobile-overview-run-menu';
     const current = this.runMode || 'claude';
 
-    for (const entry of MOBILE_OVERVIEW_RUN_MODES) {
+    for (const entry of getMobileOverviewRunModes()) {
       if (entry.mode !== 'shell' && !this.isCliAvailable(entry.mode)) continue;
       const option = document.createElement('button');
       option.type = 'button';

@@ -32,6 +32,7 @@ import { writeFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { dataPath, DEFAULT_TMUX_SOCKET, CODEMAN_INSTANCE } from './config/instance.js';
+import { needsColorterm, getResumeSpec } from './config/cli-registry.js';
 import {
   ProcessStats,
   PersistedRespawnConfig,
@@ -75,11 +76,7 @@ import {
   SAFE_PATH_PATTERN,
   findClaudeDir,
   getClaudeCliVersion,
-  resolveOpenCodeDir,
-  resolveCodexDir,
-  resolveGeminiDir,
-  resolveAntigravityDir,
-  resolvePiDir,
+  resolveCliDir,
   resolveLocalShell,
   loginShellArgs,
 } from './utils/index.js';
@@ -1092,18 +1089,10 @@ const RESUME_ID_SAFE = /^[A-Za-z0-9._-]+$/;
  */
 function appendResumeFlag(modeCommand: string, mode: SessionMode, resumeId: string): string {
   if (!RESUME_ID_SAFE.test(resumeId)) return modeCommand;
-  switch (mode) {
-    case 'gemini':
-      return `${modeCommand} --resume ${resumeId}`;
-    case 'codex':
-      return `${modeCommand} resume ${resumeId}`;
-    case 'antigravity':
-      return `${modeCommand} --conversation ${resumeId}`;
-    case 'pi':
-      return `${modeCommand} --session ${resumeId}`;
-    default:
-      return modeCommand; // shell / opencode: no resume
-  }
+  const spec = getResumeSpec(mode);
+  if (!spec) return modeCommand;
+  if (spec.position === 'subcommand') return `${modeCommand} ${spec.flag} ${resumeId}`;
+  return `${modeCommand} ${spec.flag} ${resumeId}`;
 }
 
 /**
@@ -1669,10 +1658,8 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     const exports = [
       'export LANG=en_US.UTF-8',
       'export LC_ALL=en_US.UTF-8',
-      mode === 'codex' || mode === 'gemini' || mode === 'antigravity' || mode === 'pi'
-        ? 'export COLORTERM=truecolor'
-        : 'unset COLORTERM',
-      ...(mode === 'codex' || mode === 'gemini' || mode === 'antigravity' || mode === 'pi' ? ['unset NO_COLOR'] : []),
+      needsColorterm(mode) ? 'export COLORTERM=truecolor' : 'unset COLORTERM',
+      ...(needsColorterm(mode) ? ['unset NO_COLOR'] : []),
       // Stamp each Codex pane with a unique originator so the response-viewer
       // can locate THIS pane's rollout exactly — codex writes the value into
       // session_meta.originator of every rollout it creates. Without it,
@@ -1747,27 +1734,10 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       const dir = findClaudeDir();
       return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
     }
-    if (mode === 'opencode') {
-      const dir = resolveOpenCodeDir();
-      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
-    }
-    if (mode === 'codex') {
-      const dir = resolveCodexDir();
-      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
-    }
-    if (mode === 'gemini') {
-      const dir = resolveGeminiDir();
-      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
-    }
-    if (mode === 'antigravity') {
-      const dir = resolveAntigravityDir();
-      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
-    }
-    if (mode === 'pi') {
-      const dir = resolvePiDir();
-      return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
-    }
-    return { pathExport: '', dir: null };
+    if (mode === 'shell') return { pathExport: '', dir: null };
+    // All other modes: look up binary dir via the CLI registry
+    const dir = resolveCliDir(mode);
+    return { pathExport: dir ? `export PATH="${dir}:$PATH" && ` : '', dir };
   }
 
   /**

@@ -18,6 +18,26 @@ import {
 } from '../config/terminal-history.js';
 import { MAX_EDITABLE_BYTES } from '../config/file-editing.js';
 import { MIN_MATCH_LENGTH, MAX_MATCH_LENGTH } from '../config/agent-wait.js';
+import { getAllowedEnvPrefixes, getAllowedEnvExactKeys, getRegisteredIds } from '../config/cli-registry.js';
+
+/**
+ * Accepts any registered CLI mode id (built-ins + overlay).
+ * Using refine instead of z.enum so overlay ids added at runtime are accepted.
+ */
+const cliModeSchema = z
+  .string()
+  .max(40)
+  .refine((v) => getRegisteredIds().includes(v), { message: 'Unknown CLI mode' });
+
+/**
+ * Return the current list of registered mode ids.
+ * Used by tests that previously accessed `z.enum([...]).options` directly
+ * on the `mode` field — the registry-backed refine schema has no `.options`,
+ * so this is the single source of truth for static analysis tests.
+ */
+export function getSchemaRegisteredModes(): string[] {
+  return getRegisteredIds();
+}
 
 // ========== Path Validation ==========
 
@@ -121,16 +141,14 @@ export const FileWriteSchema = z
 
 // ========== Env Var Allowlist ==========
 
-/** Allowlisted env var key prefixes */
-const ALLOWED_ENV_PREFIXES = ['CLAUDE_CODE_', 'OPENCODE_', 'CODEX_', 'GEMINI_', 'GOOGLE_', 'ANTIGRAVITY_', 'PI_'];
+/** Allowlisted env var key prefixes — derived from the CLI registry */
+const ALLOWED_ENV_PREFIXES = getAllowedEnvPrefixes();
 
 /**
  * Allowlisted exact env var keys (checked alongside the prefixes).
- * CLAUDE_CONFIG_DIR relocates the Claude CLI's user config (credentials,
- * settings, stats) so a case can run on a separate Claude subscription (#255).
- * Exact match only — CLAUDE_CONFIG_DIR_EXTRA etc. stay rejected.
+ * Derived from CLI registry entries (e.g. CLAUDE_CONFIG_DIR).
  */
-const ALLOWED_ENV_KEYS = new Set(['CLAUDE_CONFIG_DIR']);
+const ALLOWED_ENV_KEYS = new Set(getAllowedEnvExactKeys());
 
 /** Env var keys that are always blocked (security-sensitive) */
 const BLOCKED_ENV_KEYS = new Set([
@@ -160,8 +178,7 @@ const safeEnvOverridesSchema = z
       return Object.keys(val).every(isAllowedEnvKey);
     },
     {
-      message:
-        'envOverrides contains blocked or disallowed env var keys. Only CLAUDE_CODE_*, OPENCODE_*, CODEX_*, GEMINI_*, GOOGLE_*, ANTIGRAVITY_*, PI_* keys and CLAUDE_CONFIG_DIR are allowed.',
+      message: 'envOverrides contains blocked or disallowed env var keys. See /api/cli-registry for allowed prefixes.',
     }
   );
 
@@ -313,7 +330,7 @@ const parentSessionIdSchema = z.string().max(100).optional();
 
 export const CreateSessionSchema = z.object({
   workingDir: safePathSchema.optional(),
-  mode: z.enum(['claude', 'shell', 'opencode', 'codex', 'gemini', 'antigravity', 'pi']).optional(),
+  mode: cliModeSchema.optional(),
   name: z.string().max(100).optional(),
   /** Session that spawned this one — see parentSessionIdSchema. */
   parentSessionId: parentSessionIdSchema,
@@ -456,16 +473,10 @@ export const ClonePreflightSchema = z.object({
 });
 
 const RemoteCommandOverridesSchema = z
-  .object({
-    shell: z.string().min(1).max(300).optional(),
-    claude: z.string().min(1).max(300).optional(),
-    opencode: z.string().min(1).max(300).optional(),
-    codex: z.string().min(1).max(300).optional(),
-    gemini: z.string().min(1).max(300).optional(),
-    antigravity: z.string().min(1).max(300).optional(),
-    pi: z.string().min(1).max(300).optional(),
+  .record(z.string().max(40), z.string().min(1).max(300))
+  .refine((obj) => Object.keys(obj).every((k) => getRegisteredIds().includes(k) || k === 'shell'), {
+    message: 'Command override key must be a registered CLI mode id',
   })
-  .strict()
   .optional();
 
 // COD-107 — advanced SSH connection options. These ultimately exec as shell
@@ -738,7 +749,7 @@ export const QuickStartSchema = z.object({
    *  a real host dir, so the settings file crosses the bind mount); rejected for
    *  remote cases (the file would be written on the WRONG machine). */
   modelOverride: z.string().max(50).optional(),
-  mode: z.enum(['claude', 'shell', 'opencode', 'codex', 'gemini', 'antigravity', 'pi']).optional(),
+  mode: cliModeSchema.optional(),
   openCodeConfig: OpenCodeConfigSchema,
   codexConfig: CodexConfigSchema,
   geminiConfig: GeminiConfigSchema,
@@ -1267,7 +1278,7 @@ const noNewlines = (v: string) => !/[\r\n]/.test(v);
 /** Shared field shape for creating/updating a scheduled job. */
 const CronJobBaseSchema = z.object({
   name: z.string().min(1).max(200),
-  agentType: z.enum(['claude', 'shell', 'opencode', 'codex', 'gemini', 'antigravity', 'pi']),
+  agentType: cliModeSchema,
   workingDir: safePathSchema,
   launchCommand: z.string().max(2000).refine(noNewlines, 'launchCommand must be a single line').optional(),
   promptMode: z.enum(['inline_text', 'prompt_file_path']),

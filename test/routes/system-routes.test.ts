@@ -71,19 +71,10 @@ vi.mock('../../src/session-lifecycle-log.js', () => ({
   })),
 }));
 
-vi.mock('../../src/utils/opencode-cli-resolver.js', () => ({
-  isOpenCodeAvailable: vi.fn(() => false),
-  resolveOpenCodeDir: vi.fn(() => null),
-}));
-
-vi.mock('../../src/utils/gemini-cli-resolver.js', () => ({
-  isGeminiAvailable: vi.fn(() => false),
-  resolveGeminiDir: vi.fn(() => null),
-}));
-
-vi.mock('../../src/utils/antigravity-cli-resolver.js', () => ({
-  isAntigravityAvailable: vi.fn(() => false),
-  resolveAntigravityDir: vi.fn(() => null),
+vi.mock('../../src/utils/generic-cli-resolver.js', () => ({
+  isCliAvailable: vi.fn(() => false),
+  resolveCliDir: vi.fn(() => null),
+  resetCliCache: vi.fn(),
 }));
 
 vi.mock('../../src/utils/pi-cli-resolver.js', () => ({
@@ -96,9 +87,7 @@ import fs from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { subagentWatcher } from '../../src/subagent-watcher.js';
 import { getLifecycleLog } from '../../src/session-lifecycle-log.js';
-import { isOpenCodeAvailable, resolveOpenCodeDir } from '../../src/utils/opencode-cli-resolver.js';
-import { isGeminiAvailable, resolveGeminiDir } from '../../src/utils/gemini-cli-resolver.js';
-import { isAntigravityAvailable, resolveAntigravityDir } from '../../src/utils/antigravity-cli-resolver.js';
+import { isCliAvailable, resolveCliDir } from '../../src/utils/generic-cli-resolver.js';
 import { isPiAvailable, resolvePiDir, getPiCliVersion } from '../../src/utils/pi-cli-resolver.js';
 
 const mockedReadFile = vi.mocked(fs.readFile);
@@ -107,12 +96,8 @@ const mockedExistsSync = vi.mocked(existsSync);
 const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedSubagentWatcher = vi.mocked(subagentWatcher);
 const mockedGetLifecycleLog = vi.mocked(getLifecycleLog);
-const mockedIsOpenCodeAvailable = vi.mocked(isOpenCodeAvailable);
-const mockedResolveOpenCodeDir = vi.mocked(resolveOpenCodeDir);
-const mockedIsGeminiAvailable = vi.mocked(isGeminiAvailable);
-const mockedResolveGeminiDir = vi.mocked(resolveGeminiDir);
-const mockedIsAntigravityAvailable = vi.mocked(isAntigravityAvailable);
-const mockedResolveAntigravityDir = vi.mocked(resolveAntigravityDir);
+const mockedIsCliAvailable = vi.mocked(isCliAvailable);
+const mockedResolveCliDir = vi.mocked(resolveCliDir);
 const mockedIsPiAvailable = vi.mocked(isPiAvailable);
 const mockedResolvePiDir = vi.mocked(resolvePiDir);
 const mockedGetPiCliVersion = vi.mocked(getPiCliVersion);
@@ -775,8 +760,8 @@ describe('system-routes', () => {
 
   describe('GET /api/opencode/status', () => {
     it('returns unavailable when opencode is not installed', async () => {
-      mockedIsOpenCodeAvailable.mockReturnValue(false);
-      mockedResolveOpenCodeDir.mockReturnValue(null);
+      mockedIsCliAvailable.mockReturnValue(false);
+      mockedResolveCliDir.mockReturnValue(null);
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/opencode/status' });
       expect(res.statusCode).toBe(200);
@@ -786,8 +771,8 @@ describe('system-routes', () => {
     });
 
     it('returns available with path when opencode is installed', async () => {
-      mockedIsOpenCodeAvailable.mockReturnValue(true);
-      mockedResolveOpenCodeDir.mockReturnValue('/usr/local/bin');
+      mockedIsCliAvailable.mockReturnValue(true);
+      mockedResolveCliDir.mockReturnValue('/usr/local/bin');
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/opencode/status' });
       expect(res.statusCode).toBe(200);
@@ -801,8 +786,8 @@ describe('system-routes', () => {
 
   describe('GET /api/gemini/status', () => {
     it('returns unavailable when gemini is not installed', async () => {
-      mockedIsGeminiAvailable.mockReturnValue(false);
-      mockedResolveGeminiDir.mockReturnValue(null);
+      mockedIsCliAvailable.mockReturnValue(false);
+      mockedResolveCliDir.mockReturnValue(null);
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/gemini/status' });
       expect(res.statusCode).toBe(200);
@@ -812,8 +797,8 @@ describe('system-routes', () => {
     });
 
     it('returns available with path when gemini is installed', async () => {
-      mockedIsGeminiAvailable.mockReturnValue(true);
-      mockedResolveGeminiDir.mockReturnValue('/usr/local/bin');
+      mockedIsCliAvailable.mockReturnValue(true);
+      mockedResolveCliDir.mockReturnValue('/usr/local/bin');
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/gemini/status' });
       expect(res.statusCode).toBe(200);
@@ -827,8 +812,8 @@ describe('system-routes', () => {
 
   describe('GET /api/antigravity/status', () => {
     it('returns unavailable when agy is not installed', async () => {
-      mockedIsAntigravityAvailable.mockReturnValue(false);
-      mockedResolveAntigravityDir.mockReturnValue(null);
+      mockedIsCliAvailable.mockReturnValue(false);
+      mockedResolveCliDir.mockReturnValue(null);
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/antigravity/status' });
       expect(res.statusCode).toBe(200);
@@ -838,8 +823,8 @@ describe('system-routes', () => {
     });
 
     it('returns available with path when agy is installed', async () => {
-      mockedIsAntigravityAvailable.mockReturnValue(true);
-      mockedResolveAntigravityDir.mockReturnValue('/home/user/.local/bin');
+      mockedIsCliAvailable.mockReturnValue(true);
+      mockedResolveCliDir.mockReturnValue('/home/user/.local/bin');
 
       const res = await harness.app.inject({ method: 'GET', url: '/api/antigravity/status' });
       expect(res.statusCode).toBe(200);

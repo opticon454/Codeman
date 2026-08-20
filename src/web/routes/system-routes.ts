@@ -374,70 +374,61 @@ export function registerSystemRoutes(
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // CLI Integrations (Claude, OpenCode, Codex, Gemini, Antigravity, Pi)
+  // CLI Registry + per-CLI status
   // ═══════════════════════════════════════════════════════════════
 
-  // ========== Claude ==========
+  /** Return the public registry (all registered CLIs, no secrets). */
+  app.get('/api/cli-registry', async () => {
+    const { getPublicRegistry } = await import('../../config/cli-registry.js');
+    return { success: true, data: getPublicRegistry() };
+  });
 
+  /**
+   * Per-CLI binary availability.  Generic endpoint that works for any registered id,
+   * including user-overlay entries.  The six legacy /api/<cli>/status paths remain as
+   * aliases for backward compat with older integrations.
+   */
+  app.get('/api/cli/:cliId/status', async (req) => {
+    const { cliId } = req.params as { cliId: string };
+    const { getCliEntry } = await import('../../config/cli-registry.js');
+    const { resolveCliDir, isCliAvailable } = await import('../../utils/generic-cli-resolver.js');
+    const entry = getCliEntry(cliId);
+    if (!entry) return { success: false, error: 'Unknown CLI id', errorCode: 'NOT_FOUND' };
+    if (cliId === 'claude') {
+      const { isClaudeAvailable, findClaudeDir } = await import('../../utils/claude-cli-resolver.js');
+      return { success: true, data: { available: isClaudeAvailable(), path: findClaudeDir() } };
+    }
+    if (cliId === 'pi') {
+      const { isPiAvailable, resolvePiDir, getPiCliVersion } = await import('../../utils/pi-cli-resolver.js');
+      return { success: true, data: { available: isPiAvailable(), path: resolvePiDir(), version: getPiCliVersion() } };
+    }
+    return { success: true, data: { available: isCliAvailable(cliId), path: resolveCliDir(cliId) } };
+  });
+
+  // Legacy per-CLI aliases kept for backward compat
   app.get('/api/claude/status', async () => {
     const { isClaudeAvailable, findClaudeDir } = await import('../../utils/claude-cli-resolver.js');
-    return {
-      available: isClaudeAvailable(),
-      path: findClaudeDir(),
-    };
+    return { available: isClaudeAvailable(), path: findClaudeDir() };
   });
-
-  // ========== OpenCode ==========
-
   app.get('/api/opencode/status', async () => {
-    const { isOpenCodeAvailable, resolveOpenCodeDir } = await import('../../utils/opencode-cli-resolver.js');
-    return {
-      available: isOpenCodeAvailable(),
-      path: resolveOpenCodeDir(),
-    };
+    const { resolveCliDir, isCliAvailable } = await import('../../utils/generic-cli-resolver.js');
+    return { available: isCliAvailable('opencode'), path: resolveCliDir('opencode') };
   });
-
   app.get('/api/codex/status', async () => {
-    const { isCodexAvailable, resolveCodexDir } = await import('../../utils/codex-cli-resolver.js');
-    return {
-      available: isCodexAvailable(),
-      path: resolveCodexDir(),
-    };
+    const { resolveCliDir, isCliAvailable } = await import('../../utils/generic-cli-resolver.js');
+    return { available: isCliAvailable('codex'), path: resolveCliDir('codex') };
   });
-
-  // ========== Gemini ==========
-
   app.get('/api/gemini/status', async () => {
-    const { isGeminiAvailable, resolveGeminiDir } = await import('../../utils/gemini-cli-resolver.js');
-    return {
-      available: isGeminiAvailable(),
-      path: resolveGeminiDir(),
-    };
+    const { resolveCliDir, isCliAvailable } = await import('../../utils/generic-cli-resolver.js');
+    return { available: isCliAvailable('gemini'), path: resolveCliDir('gemini') };
   });
-
-  // ========== Antigravity ==========
-
   app.get('/api/antigravity/status', async () => {
-    const { isAntigravityAvailable, resolveAntigravityDir } = await import('../../utils/antigravity-cli-resolver.js');
-    return {
-      available: isAntigravityAvailable(),
-      path: resolveAntigravityDir(),
-    };
+    const { resolveCliDir, isCliAvailable } = await import('../../utils/generic-cli-resolver.js');
+    return { available: isCliAvailable('antigravity'), path: resolveCliDir('antigravity') };
   });
-
-  // ========== Pi ==========
-
-  // Carries `version` on top of the sibling shape: `pi` is a short, generic binary
-  // name, so the resolver sanity-probes `pi --version` and rejects anything that
-  // is not the coding agent. Surfacing path + version makes a misresolution
-  // diagnosable from the UI instead of presenting as "the mode just doesn't work".
   app.get('/api/pi/status', async () => {
     const { isPiAvailable, resolvePiDir, getPiCliVersion } = await import('../../utils/pi-cli-resolver.js');
-    return {
-      available: isPiAvailable(),
-      path: resolvePiDir(),
-      version: getPiCliVersion(),
-    };
+    return { available: isPiAvailable(), path: resolvePiDir(), version: getPiCliVersion() };
   });
 
   // ═══════════════════════════════════════════════════════════════

@@ -45,6 +45,86 @@ function urlBase64ToUint8Array(base64String) {
 // Default terminal scrollback (can be changed via settings)
 const DEFAULT_SCROLLBACK = 50000;
 
+// ═══════════════════════════════════════════════════════════════
+// CLI Registry cache (loaded from GET /api/cli-registry at init)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Module-level cache populated by `CodemanCliRegistry.load()`.
+ * Fallback built-in list mirrors the TS registry so the UI renders before
+ * the async fetch completes and during tests where no server is running.
+ */
+const _CLI_REGISTRY_FALLBACK = [
+  { id: 'claude',      label: 'Claude',      shortBadge: '',   isExternalCli: false, echoPolicy: 'buffer',  stripMode: 'full',   hooksAvailable: true,  supportsRespawn: true,  supportsScrollForward: true,  color: '#3b82f6', runButtonLabel: 'Run',    promptStyle: 'default', maxFrameBytes: 65536 },
+  { id: 'shell',       label: 'Shell',       shortBadge: 'sh', isExternalCli: false, echoPolicy: 'none',    stripMode: 'none',   hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#6b7280', runButtonLabel: 'Run SH', promptStyle: 'default', maxFrameBytes: 65536 },
+  { id: 'opencode',    label: 'OpenCode',    shortBadge: 'oc', isExternalCli: true,  echoPolicy: 'buffer',  stripMode: 'narrow', hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#10b981', runButtonLabel: 'Run OC', promptStyle: 'opencode', maxFrameBytes: 65536 },
+  { id: 'codex',       label: 'Codex',       shortBadge: 'cx', isExternalCli: true,  echoPolicy: 'predict', stripMode: 'full',   hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#2bcbbb', runButtonLabel: 'Run CX', promptStyle: 'default', maxFrameBytes: 32768 },
+  { id: 'gemini',      label: 'Gemini',      shortBadge: 'gm', isExternalCli: true,  echoPolicy: 'buffer',  stripMode: 'full',   hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#8ab4f8', runButtonLabel: 'Run GM', promptStyle: 'default', maxFrameBytes: 65536 },
+  { id: 'antigravity', label: 'Antigravity', shortBadge: 'ag', isExternalCli: true,  echoPolicy: 'buffer',  stripMode: 'narrow', hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#22d3ee', runButtonLabel: 'Run AG', promptStyle: 'default', maxFrameBytes: 65536 },
+  { id: 'pi',          label: 'Pi',          shortBadge: 'pi', isExternalCli: true,  echoPolicy: 'buffer',  stripMode: 'narrow', hooksAvailable: false, supportsRespawn: false, supportsScrollForward: false, color: '#f472b6', runButtonLabel: 'Run PI', promptStyle: 'default', maxFrameBytes: 65536 },
+];
+
+/** Registry accessor used by all frontend modules. */
+const CodemanCliRegistry = {
+  _entries: _CLI_REGISTRY_FALLBACK.slice(),
+
+  /** Fetch the registry from the server and update the cache. */
+  async load() {
+    try {
+      const res = await fetch('/api/cli-registry');
+      if (!res.ok) return;
+      const body = await res.json();
+      const entries = body?.data ?? body;
+      if (Array.isArray(entries) && entries.length > 0) {
+        this._entries = entries;
+      }
+    } catch {
+      // keep fallback
+    }
+  },
+
+  /** All entries, including overlay-loaded ones. */
+  all() { return this._entries; },
+
+  /** Entry for a mode id, or null. */
+  get(id) { return this._entries.find(e => e.id === id) ?? null; },
+
+  /** True for external-TUI CLIs. */
+  isExternalCli(id) { return this.get(id)?.isExternalCli ?? false; },
+
+  /** Human-readable label for a mode id. */
+  label(id) { return this.get(id)?.label ?? id; },
+
+  /** 2-char tab badge. */
+  shortBadge(id) { return this.get(id)?.shortBadge ?? id.slice(0, 2); },
+
+  /** Echo policy for this CLI. */
+  echoPolicy(id) { return this.get(id)?.echoPolicy ?? 'buffer'; },
+
+  /** Terminal strip mode. */
+  stripMode(id) { return this.get(id)?.stripMode ?? 'none'; },
+
+  /** CSS accent color. */
+  color(id) { return this.get(id)?.color ?? '#6b7280'; },
+
+  /** Run button label, e.g. 'Run GM'. */
+  runButtonLabel(id) { return this.get(id)?.runButtonLabel ?? `Run ${id.slice(0,2).toUpperCase()}`; },
+
+  /** Prompt detection style ('default' or 'opencode'). */
+  promptStyle(id) { return this.get(id)?.promptStyle ?? 'default'; },
+
+  /** Maximum bytes per terminal frame read. */
+  maxFrameBytes(id) { return this.get(id)?.maxFrameBytes ?? 65536; },
+
+  /** Ids of all non-shell, non-claude external CLIs. */
+  externalIds() { return this._entries.filter(e => e.isExternalCli).map(e => e.id); },
+
+  /** Ids of all CLIs (including claude + shell). */
+  allIds() { return this._entries.map(e => e.id); },
+};
+
+
+
 // Timing constants
 const STUCK_THRESHOLD_DEFAULT_MS = 600000;  // 10 minutes - default for stuck detection
 const GROUPING_TIMEOUT_MS = 5000;           // 5 seconds - notification grouping window

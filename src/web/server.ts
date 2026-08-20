@@ -1390,35 +1390,30 @@ export class WebServer extends EventEmitter {
     if (!soloSessionId) {
       const [
         { isClaudeAvailable },
-        { isOpenCodeAvailable },
-        { isCodexAvailable },
-        { isGeminiAvailable },
-        { isAntigravityAvailable },
         { isPiAvailable },
+        { isCliAvailable },
+        { getRegisteredIds },
         { isCloudflaredAvailable },
         { isGitAvailable },
       ] = await Promise.all([
         import('../utils/claude-cli-resolver.js'),
-        import('../utils/opencode-cli-resolver.js'),
-        import('../utils/codex-cli-resolver.js'),
-        import('../utils/gemini-cli-resolver.js'),
-        import('../utils/antigravity-cli-resolver.js'),
         import('../utils/pi-cli-resolver.js'),
+        import('../utils/generic-cli-resolver.js'),
+        import('../config/cli-registry.js'),
         import('../utils/cloudflared-resolver.js'),
         import('../git-clone.js'),
       ]);
-      const available = {
+      const available: Record<string, boolean> = {
         claude: isClaudeAvailable(),
-        opencode: isOpenCodeAvailable(),
-        codex: isCodexAvailable(),
-        gemini: isGeminiAvailable(),
-        antigravity: isAntigravityAvailable(),
         pi: isPiAvailable(),
         cloudflared: isCloudflaredAvailable(),
-        // Not a run mode: the Add Case → Clone tab is an offer this box cannot
-        // keep without git (issue #236), same reasoning as cloudflared above.
         git: isGitAvailable(),
       };
+      // All other registered CLIs (opencode, codex, gemini, antigravity, overlay entries)
+      for (const id of getRegisteredIds()) {
+        if (id === 'claude' || id === 'shell' || id === 'pi') continue;
+        available[id] = isCliAvailable(id);
+      }
       html = html.replace(
         '</head>',
         `<script>window.__codemanCliAvailable=${JSON.stringify(available)};</script>\n</head>`

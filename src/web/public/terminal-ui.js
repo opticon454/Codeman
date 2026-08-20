@@ -3257,7 +3257,8 @@ Object.assign(CodemanApp.prototype, {
 
     // Swap prompt finder based on session mode
     if (this._localEchoOverlay && session) {
-      if (session.mode === 'opencode') {
+      const policy = CodemanCliRegistry.echoPolicy(session.mode || 'claude');
+      if (CodemanCliRegistry.promptStyle(session.mode || 'claude') === 'opencode') {
         // OpenCode (Bubble Tea TUI): find the ┃ border on the cursor's row.
         // The input area is "┃  <text>" — the ┃ is the anchor, offset 3 skips "┃  ".
         // We use the cursor row (cursorY) to find the right line, then scan for ┃.
@@ -3279,24 +3280,13 @@ Object.assign(CodemanApp.prototype, {
             }
           },
         });
-      } else if (session.mode === 'shell' || session.mode === 'codex') {
-        // Shell mode: the shell provides its own PTY echo so the overlay isn't needed.
-        // Codex mode: the composer is fully interactive per keystroke. Typing
-        // "/" pops a live-filtering command picker (issue #222), the composer
-        // grows and rewraps as it fills (#220), pastes are bracketed (#219)
-        // and arrows/history edit server-side state (#218). Buffering
-        // keystrokes until Enter starves all of that, so codex sessions use
-        // plain PTY echo like shell — visually augmented by the predictive
-        // write-through echo (see _localEchoPolicy below and the onData hook).
-        // Disable the buffer overlay by clearing any pending text.
+      } else if (policy === 'none' || policy === 'predict') {
+        // 'none' = shell: PTY provides its own echo; 'predict' = codex write-through.
+        // Both disable the buffer overlay.
         this._localEchoOverlay.clear();
         this._localEchoEnabled = false;
       } else {
-        // Codex/Claude-style TUIs usually expose a ❯ prompt. During active
-        // redraws or compact mobile layouts that marker may not be present in
-        // the viewport, while xterm's cursor still marks the editable input
-        // position. Fall back to cursor coordinates so phone typing appears at
-        // the terminal cursor instead of disappearing into pending state.
+        // Default: ❯ prompt anchor with cursor fallback
         this._localEchoOverlay.setPrompt({
           type: 'custom',
           offset: 0,
@@ -3322,14 +3312,12 @@ Object.assign(CodemanApp.prototype, {
       }
     }
 
-    // Per-session echo policy: 'buffer' (overlay), 'predict' (codex
-    // write-through, see the onData predict hook), 'off'. _localEchoEnabled
-    // keeps its exact historical values above (false for codex/shell), so
-    // every existing consumer is unchanged; this field is purely additive.
+    // Per-session echo policy derived from the registry.
     let policy = 'off';
     if (session && echoEnabled) {
-      if (session.mode === 'codex') policy = 'predict';
-      else if (session.mode !== 'shell') policy = 'buffer';
+      const ep = CodemanCliRegistry.echoPolicy(session.mode || 'claude');
+      if (ep === 'predict') policy = 'predict';
+      else if (ep === 'buffer') policy = 'buffer';
     }
     this._localEchoPolicy = policy;
     if (policy !== 'predict') this._predictiveEcho?.clearPredictions();
@@ -3405,7 +3393,7 @@ Object.assign(CodemanApp.prototype, {
     // phases, so it gets a smaller first frame to keep per-frame xterm/WebGL
     // stalls short; other modes keep the larger 64KB budget.
     const activeSession = this.activeSessionId && this.sessions ? this.sessions.get(this.activeSessionId) : null;
-    const MAX_FRAME_BYTES = activeSession?.mode === 'codex' ? 32768 : 65536;
+    const MAX_FRAME_BYTES = CodemanCliRegistry.maxFrameBytes(activeSession?.mode || 'claude');
     let deferred = false;
     // If the user is reading history, remember the viewport so we can restore it
     // after the write — Codex status redraws would otherwise jump it.
@@ -3941,7 +3929,7 @@ Object.assign(CodemanApp.prototype, {
     let promptRow = -1;
     let menuSelectionVisible = false;
 
-    if (mode === 'opencode') {
+    if (CodemanCliRegistry.promptStyle(mode) === 'opencode') {
       if (lines[cursorRow]?.includes('\u2503')) promptRow = cursorRow;
     } else {
       for (let row = rows - 1; row >= 0; row--) {
@@ -4290,7 +4278,7 @@ Object.assign(CodemanApp.prototype, {
   // PTY-side TUI keeps tracking enabled, we just never see the enable sequence.
   _sessionUsesServerMouseStrip() {
     const mode = this.sessions?.get(this.activeSessionId)?.mode || 'claude';
-    return mode === 'claude' || mode === 'codex' || mode === 'gemini';
+    return CodemanCliRegistry.stripMode(mode) === 'full';
   },
 
   // True when xterm's viewport shows the live PTY screen (not scrolled up into

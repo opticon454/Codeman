@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import { getCliEntry } from './config/cli-registry.js';
 import type {
   RemoteCase,
   RemoteCommandMode,
@@ -99,23 +100,11 @@ export function defaultRemoteCommandForMode(mode: SessionMode): string {
   // remain-on-exit-preserved dead pane. Route through `$SHELL -i -l -c`, the same
   // fix already used for shell mode below, so PATH is fully resolved before the
   // CLI name is looked up.
-  const commands: Record<RemoteCommandMode, string> = {
-    // $SHELL, not a hardcoded bash: sshd sets it from the remote user's
-    // /etc/passwd entry, so this launches their actual login shell (zsh,
-    // fish, etc.). -i -l so it sources rc files (~/.zshrc etc.), matching
-    // the local shell-mode launch.
-    shell: `exec ${REMOTE_LOGIN_SHELL} -i -l`,
-    // Mirror the LOCAL claude default so the remote agent runs non-interactively
-    // (no trust-folder/permission prompt that nothing on the remote answers). The
-    // per-host `commands.claude` override stays the escape hatch.
-    claude: remoteLoginShellCommand('claude --dangerously-skip-permissions'),
-    opencode: remoteLoginShellCommand('opencode'),
-    codex: remoteLoginShellCommand('codex'),
-    gemini: remoteLoginShellCommand('gemini'),
-    antigravity: remoteLoginShellCommand('agy'),
-    pi: remoteLoginShellCommand('pi'),
-  };
-  return commands[mode as RemoteCommandMode] || commands.shell;
+  if (mode === 'shell') return `exec ${REMOTE_LOGIN_SHELL} -i -l`;
+  if (mode === 'claude') return remoteLoginShellCommand('claude --dangerously-skip-permissions');
+  const entry = getCliEntry(mode);
+  if (entry?.binary) return remoteLoginShellCommand(entry.binary);
+  return `exec ${REMOTE_LOGIN_SHELL} -i -l`;
 }
 
 export function remoteSshTarget(host: Pick<RemoteHost, 'username' | 'host'>): string {
@@ -258,18 +247,14 @@ export async function checkRemoteTmuxAvailable(
 }
 
 /**
- * The CLI binary each session mode runs on the remote host. Antigravity's
- * binary is `agy` (the mode name is not the command); shell has no CLI to
- * probe, so it is absent.
+ * The CLI binary each session mode runs on the remote host.
+ * Derived from the CLI registry so overlay entries are included.
+ * Shell has no CLI to probe, so it is absent.
  */
-const REMOTE_CLI_BIN: Partial<Record<SessionMode, string>> = {
-  claude: 'claude',
-  opencode: 'opencode',
-  codex: 'codex',
-  gemini: 'gemini',
-  antigravity: 'agy',
-  pi: 'pi',
-};
+function getRemoteCliBin(mode: SessionMode): string | undefined {
+  if (mode === 'shell') return undefined;
+  return getCliEntry(mode)?.binary || undefined;
+}
 
 /**
  * Build the SSH command that reads the remote CLI's version (`claude --version`

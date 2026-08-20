@@ -30,6 +30,7 @@ import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dataPath } from './config/instance.js';
+import { getCliEntry } from './config/cli-registry.js';
 import type {
   DockerCase,
   DockerCommandMode,
@@ -136,17 +137,14 @@ export function dockerContainerName(caseName: string): string {
 
 /** Default pane command per CLI mode (mirror of defaultRemoteCommandForMode). */
 export function defaultDockerCommandForMode(mode: SessionMode): string {
-  const commands: Record<DockerCommandMode, string> = {
-    shell: 'exec bash -l',
-    // Mirror the LOCAL claude default so the in-container agent runs non-interactively.
-    claude: 'exec claude --dangerously-skip-permissions',
-    opencode: 'exec opencode',
-    codex: 'exec codex',
-    gemini: 'exec gemini',
-    antigravity: 'exec agy',
-    pi: 'exec pi',
-  };
-  return commands[mode as DockerCommandMode] || commands.shell;
+  if (mode === 'shell') return 'exec bash -l';
+  if (mode === 'claude') return 'exec claude --dangerously-skip-permissions';
+  const entry = getCliEntry(mode);
+  if (entry?.binary) {
+    const parts = [entry.binary, ...(entry.staticArgs ?? [])];
+    return `exec ${parts.join(' ')}`;
+  }
+  return 'exec bash -l';
 }
 
 /** `container:/workdir` display string (mirror of remoteDisplayPath's `user@host:path`). */

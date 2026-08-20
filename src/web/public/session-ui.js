@@ -406,6 +406,10 @@ Object.assign(CodemanApp.prototype, {
       if (mode === 'shell') {
         return await this.runShell();
       }
+      // Overlay CLIs registered in cli-registry.json
+      if (CodemanCliRegistry.isExternalCli(mode)) {
+        return await this.runExternalCli(mode);
+      }
       return await this.runClaude();
     } finally {
       const remaining = minLockMs - (Date.now() - startedAt);
@@ -468,7 +472,7 @@ Object.assign(CodemanApp.prototype, {
    * run modes like the rest, and neither `agy` nor `pi` is likely to be installed.
    */
   _refreshRunModeAvailability(menu) {
-    for (const mode of ['claude', 'opencode', 'codex', 'gemini', 'antigravity', 'pi']) {
+    for (const mode of CodemanCliRegistry.allIds().filter(id => id !== 'shell')) {
       const btn = menu.querySelector(`.run-mode-option[data-mode="${mode}"]`);
       if (btn) btn.style.display = this.isCliAvailable(mode) ? 'flex' : 'none';
     }
@@ -565,7 +569,7 @@ Object.assign(CodemanApp.prototype, {
       gearBtn.className = `btn-toolbar btn-run-gear mode-${mode}`;
     }
     if (label) {
-      label.textContent = mode === 'opencode' ? 'Run OC' : mode === 'codex' ? 'Run CX' : mode === 'gemini' ? 'Run GM' : mode === 'antigravity' ? 'Run AG' : mode === 'pi' ? 'Run PI' : mode === 'shell' ? 'Run SH' : 'Run';
+      label.textContent = CodemanCliRegistry.runButtonLabel(mode);
     }
   },
 
@@ -594,6 +598,27 @@ Object.assign(CodemanApp.prototype, {
   _initRunMode() {
     try { this._runMode = localStorage.getItem('codeman_runMode') || 'claude'; } catch { this._runMode = 'claude'; }
     this._applyRunMode();
+    // Inject overlay-only entries into the run-mode menu after the registry loads
+    CodemanCliRegistry.load().then(() => this._injectOverlayRunModeOptions()).catch(() => {});
+  },
+
+  /** Add menu buttons for any CLI ids that are not already present in #runModeMenu. */
+  _injectOverlayRunModeOptions() {
+    const menu = document.getElementById('runModeMenu');
+    if (!menu) return;
+    const existing = new Set([...menu.querySelectorAll('[data-mode]')].map(b => b.dataset.mode));
+    for (const entry of CodemanCliRegistry.all()) {
+      if (existing.has(entry.id)) continue;
+      const btn = document.createElement('button');
+      btn.className = 'run-mode-option';
+      btn.dataset.mode = entry.id;
+      btn.onclick = () => this.setRunMode(entry.id);
+      btn.innerHTML = `<span class="run-mode-dot ${entry.id}" style="background:${entry.color}"></span>${entry.label}`;
+      // Insert before the shell option (last item) so overlay CLIs sit above it
+      const shellBtn = menu.querySelector('[data-mode="shell"]');
+      if (shellBtn) menu.insertBefore(btn, shellBtn);
+      else menu.appendChild(btn);
+    }
   },
 
   // Tab count stepper functions
@@ -1279,6 +1304,49 @@ Object.assign(CodemanApp.prototype, {
   },
 
 
+  /** Generic launcher for CLIs registered via cli-registry.json (overlay entries). */
+  async runExternalCli(mode) {
+    const caseName = document.getElementById('quickStartCase').value || 'testcase';
+    const label = CodemanCliRegistry.label(mode);
+    const _runLoc = (this.cases || []).find(c => c.name === caseName)?.location;
+    const isRemote = _runLoc === 'remote' || _runLoc === 'docker';
+
+    const ownsLaunchTerminal = this._beginSessionLaunchStatus(`Starting ${label} session in ${caseName}...`);
+    this.terminal.focus();
+
+    try {
+      if (!isRemote) {
+        const statusRes = await fetch(`/api/cli/${encodeURIComponent(mode)}/status`);
+        const statusBody = await statusRes.json();
+        const status = statusBody.data ?? statusBody;
+        if (!status.available) {
+          this._reportSessionLaunchError(ownsLaunchTerminal, `${label} binary not found. Check your cli-registry.json searchDirs.`);
+          return;
+        }
+      }
+
+      const envOverrides = this.buildEnvOverrides(this.getCaseSettings(caseName), this.loadAppSettingsFromStorage());
+      const res = await fetch('/api/quick-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseName,
+          mode,
+          sessionName: `w${this._nextCaseSessionStartNumber(caseName)}-${caseName}`,
+          ...(isRemote || Object.keys(envOverrides).length === 0 ? {} : { envOverrides }),
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || `Failed to start ${label}`);
+      await this._ensureCreatedSessionVisible(data.data.sessionId, data.data.session);
+      if (data.data.sessionId) await this.selectSession(data.data.sessionId);
+      this.terminal.focus();
+    } catch (err) {
+      this._reportSessionLaunchError(ownsLaunchTerminal, err.message);
+    }
+  },
+
+
   // ═══════════════════════════════════════════════════════════════
   // Session Options Modal
   // ═══════════════════════════════════════════════════════════════
@@ -1343,7 +1411,7 @@ Object.assign(CodemanApp.prototype, {
     if (detachToggle) detachToggle.checked = this.hasTabDetachOverride(sessionId);
 
     // Reset to an appropriate tab — Summary for external CLIs (Respawn/Ralph are Claude-only)
-    const isAltMode = session.mode === 'opencode' || session.mode === 'codex' || session.mode === 'gemini' || session.mode === 'antigravity' || session.mode === 'pi';
+    const isAltMode = CodemanCliRegistry.isExternalCli(session.mode);
     this.switchOptionsTab(isAltMode ? 'summary' : 'respawn');
 
     // Update respawn status display and buttons
@@ -1373,7 +1441,7 @@ Object.assign(CodemanApp.prototype, {
     }
 
     // Hide Claude-specific options for external CLI sessions
-    const isExternalCli = session.mode === 'opencode' || session.mode === 'codex' || session.mode === 'gemini' || session.mode === 'antigravity' || session.mode === 'pi';
+    const isExternalCli = CodemanCliRegistry.isExternalCli(session.mode);
     const claudeOnlyEls = document.querySelectorAll('[data-claude-only]');
     claudeOnlyEls.forEach(el => { el.style.display = isExternalCli ? 'none' : ''; });
 
@@ -3113,9 +3181,6 @@ Object.defineProperty(CodemanApp.prototype, 'runMode', {
     return this._runMode || 'claude';
   },
   set(mode) {
-    this._runMode =
-      mode === 'opencode' || mode === 'codex' || mode === 'gemini' || mode === 'antigravity' || mode === 'pi' || mode === 'claude'
-        ? mode
-        : 'claude';
+    this._runMode = CodemanCliRegistry.allIds().includes(mode) ? mode : 'claude';
   },
 });

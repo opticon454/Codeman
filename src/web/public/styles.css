@@ -4761,6 +4761,7 @@ body.touch-device .terminal-container .xterm .xterm-helper-textarea {
   border-radius: 50%;
   flex-shrink: 0;
 }
+.run-mode-dot { background: var(--cli-color, #6b7280); }
 .run-mode-dot.claude { background: #3b82f6; }
 .run-mode-dot.opencode { background: #10b981; }
 .run-mode-dot.codex { background: #a855f7; }

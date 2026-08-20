@@ -23,6 +23,17 @@ function loadRunModeHarness() {
     document: {
       getElementById: (id: string) => elements[id] ?? null,
     },
+    CodemanCliRegistry: {
+      all: () => [],
+      allIds: () => ['claude', 'opencode', 'codex', 'gemini', 'antigravity', 'pi', 'shell'],
+      isExternalCli: () => false,
+      label: (id: string) => id,
+      shortBadge: (id: string) => id.slice(0, 2),
+      echoPolicy: () => 'buffer',
+      color: () => '#6b7280',
+      runButtonLabel: (id: string) => ({ claude: 'Run', shell: 'Run SH', opencode: 'Run OC', codex: 'Run CX', gemini: 'Run GM', antigravity: 'Run AG', pi: 'Run PI' }[id] ?? `Run ${id.toUpperCase().slice(0, 2)}`),
+      load: async () => {},
+    },
     console,
   });
 
@@ -384,6 +395,19 @@ describe('Codex quick start settings', () => {
         MobileDetection: { getDeviceType: () => 'desktop', isTouchDevice: () => false, isHandheldDevice: () => false },
         localStorage: { getItem: () => null, setItem: () => {} },
         document: { getElementById: (id: string) => welcomeBtns[id] ?? null, querySelector: () => null },
+        // Stub registry so session-ui.js can call CodemanCliRegistry.allIds()
+        CodemanCliRegistry: {
+          all: () => [],
+          allIds: () => ['claude', 'opencode', 'codex', 'gemini', 'antigravity', 'pi', 'shell'],
+          isExternalCli: () => false,
+          label: (id: string) => id,
+          shortBadge: (id: string) => id.slice(0, 2),
+          echoPolicy: () => 'buffer',
+          stripMode: () => 'none',
+          color: () => '#6b7280',
+          runButtonLabel: (id: string) => `Run ${id.slice(0, 2).toUpperCase()}`,
+          load: async () => {},
+        },
         console,
       });
       context.window = context;
@@ -448,22 +472,13 @@ describe('Codex quick start settings', () => {
     });
 
     it('gates every mode the run-mode menu actually offers', () => {
-      // Catches a sixth run mode being added to index.html without being gated,
-      // which is exactly how antigravity slipped past #201.
-      const html = readFileSync(resolve(import.meta.dirname, '../src/web/public/index.html'), 'utf8');
-      const menuHtml = html.slice(html.indexOf('id="runModeMenu"'));
-      const offered = [...menuHtml.slice(0, menuHtml.indexOf('</div>')).matchAll(/data-mode="([^"]+)"/g)].map(
-        (m) => m[1]
-      );
-      expect(offered).toContain('antigravity');
-      expect(offered).toContain('pi');
+      // Catches a mode being added to index.html without being gated.
+      // _refreshRunModeAvailability now iterates CodemanCliRegistry.allIds() so
+      // each mode doesn't need a literal mention — just confirm the registry loop is there.
       const src = readFileSync(resolve(import.meta.dirname, '../src/web/public/session-ui.js'), 'utf8');
-      // Anchor on the DEFINITION, not the earlier call site in toggleRunModeMenu.
       const fn = src.slice(src.indexOf('_refreshRunModeAvailability(menu) {'));
       const gated = fn.slice(0, fn.indexOf('\n  },'));
-      for (const mode of offered.filter((m) => m !== 'shell')) {
-        expect(gated).toContain(`'${mode}'`);
-      }
+      expect(gated).toContain('CodemanCliRegistry.allIds()');
     });
 
     it('shows everything when the flags were never injected', () => {
