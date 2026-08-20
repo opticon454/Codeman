@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "\\\\10.10.10.10\\appdata\\compose"
+		}
+	],
+	"settings": {
+		"files.eol": "\n",
+		"terminal.integrated.cwd": "${workspaceFolder}",
+		"terminal.integrated.env.windows": {
+			// "DOCKER_CONTEXT": "default",
+			"DOCKER_CONTEXT": "unraid" // Run 'docker context create unraid --docker "host=ssh://root@10.10.10.10" ' to create this context
+			// Switching contexts:
+			//   docker context use default
+			//   docker context use unraid
+		}
+	}
+}
