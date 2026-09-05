@@ -316,7 +316,7 @@ const capabilitiesSchema = z
           kind: z.literal('configDir'),
           dirEnvVar: envName,
           fileName: z.string().min(1).max(80),
-          template: z.enum(['codex-toml', 'pi-models-json', 'omp-models-yml']),
+          template: z.enum(['codex-toml', 'pi-models-json', 'omp-models-yml', 'grok-toml']),
         })
         .strict(),
       z.object({ kind: z.literal('unsupported') }).strict(),
