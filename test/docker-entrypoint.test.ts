@@ -172,6 +172,35 @@ describe('Start-Codeman.sh', () => {
   it('falls back to `down --volumes` when the Compose project name cannot be resolved', () => {
     expect(startScript).toMatch(/if \[\[ -z "\$project_name" \]\]; then[\s\S]*down --volumes/);
   });
+
+  it('refuses to touch a Compose project already owned by a different checkout', () => {
+    // docker-compose.yaml hard-codes `name: codeman`, so a second checkout run
+    // without COMPOSE_PROJECT_NAME collides with a different deployment's
+    // project. This guard is what caught it in the incident that motivated it
+    // (2026-09-21): a second checkout's `down`/`up` silently took down and
+    // rebuilt a live production container under the same resolved name.
+    const projectName = startScript.indexOf('project_name=$(');
+    const guard = startScript.indexOf('other_working_dir=$(');
+    const build = startScript.indexOf('"${compose_command[@]}" build');
+    const down = startScript.indexOf('"${compose_command[@]}" down');
+    const fastPathUp = startScript.indexOf('exec "${compose_command[@]}" up --build -d');
+    expect(projectName).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(projectName);
+    // Must run before EVERY destructive path, including the no-refresh-needed
+    // fast path that skips straight to `up --build -d`.
+    expect(guard).toBeLessThan(fastPathUp);
+    expect(guard).toBeLessThan(build);
+    expect(guard).toBeLessThan(down);
+    // Compares against the label Compose itself stamps, not a marker file this
+    // script writes - the whole point is not trusting per-checkout state that
+    // itself could be stale or absent on a first run against a live conflict.
+    expect(startScript).toMatch(/label=com\.docker\.compose\.project=\$project_name/);
+    expect(startScript).toMatch(/\{\{\.Label "com\.docker\.compose\.project\.working_dir"\}\}/);
+    expect(startScript).toMatch(/grep -v -F -x -- "\$script_dir"/);
+    // project_name is resolved exactly once and reused by the later
+    // volume-refresh scoping - a second resolution could drift from the first.
+    expect(startScript.match(/^project_name=\$\(/m)?.length ?? 0).toBe(1);
+  });
 });
 
 describe('git_head_commit resolves every ref layout a checkout can have', () => {

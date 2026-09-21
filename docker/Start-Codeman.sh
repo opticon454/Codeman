@@ -32,6 +32,53 @@ for override_file in "$override_yml" "$override_yaml"; do
   fi
 done
 compose_command=(docker compose --env-file "$env_file" "${compose_files[@]}")
+
+# Resolved once here, reused both by the collision guard immediately below
+# and by the scoped volume-refresh further down - a single source, so the
+# two cannot resolve to different names for the same run.
+project_name=$(
+  "${compose_command[@]}" config --format json 2>/dev/null |
+    sed -n 's/^[[:space:]]*"name":[[:space:]]*"\([^"]*\)".*$/\1/p' | head -n1
+)
+
+# docker-compose.yaml hard-codes `name: codeman` at its top, so every checkout
+# of this repo resolves to the SAME Compose project unless COMPOSE_PROJECT_NAME
+# is exported first (Compose's own precedence: -p flag > that env var > the
+# file's `name:` key). A second checkout run without the override silently
+# operates on a DIFFERENT deployment's containers and volumes: this took a live
+# production instance down within about a minute (2026-09-21) - `docker compose
+# down` stopped and removed its container, then the volume-refresh step further
+# down matched production's `codeman-dist`/`codeman-node-modules` volumes by
+# that same shared project name, deleted them, and reseeded them from THIS
+# checkout's image, leaving production running unmerged, unreviewed code from
+# an unrelated branch with no error at any point. Detect the collision by
+# comparing the label Compose stamps on every resource it creates,
+# `com.docker.compose.project.working_dir`, against this checkout's own
+# docker/ directory - the one signal that survives the project name itself
+# colliding. A first-ever deployment, or a repeat run against this SAME
+# checkout, finds no mismatch and proceeds untouched.
+if [[ -n "$project_name" ]]; then
+  other_working_dir=$(
+    docker ps -a --filter "label=com.docker.compose.project=$project_name" \
+      --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null |
+      grep -v -F -x -- "$script_dir" | head -n1
+  )
+  if [[ -n "$other_working_dir" ]]; then
+    printf 'Error: Compose project "%s" is already in use by a DIFFERENT checkout:\n' "$project_name" >&2
+    printf '  %s\n' "$other_working_dir" >&2
+    printf 'This checkout is:\n' >&2
+    printf '  %s\n' "$script_dir" >&2
+    printf '\n' >&2
+    printf 'docker-compose.yaml hard-codes `name: %s`, so two checkouts on the same host\n' "$project_name" >&2
+    printf 'collide unless each one sets a distinct COMPOSE_PROJECT_NAME. Continuing would\n' >&2
+    printf 'stop, remove, and rebuild the OTHER checkout'"'"'s running container and volumes.\n' >&2
+    printf '\n' >&2
+    printf 'Fix: export COMPOSE_PROJECT_NAME=<something-unique-to-this-checkout> before\n' >&2
+    printf 'running this script, then retry.\n' >&2
+    exit 1
+  fi
+fi
+
 appdata_path=$(
   "${compose_command[@]}" config --environment |
     awk -F= '$1 == "CODEMAN_APPDATA_PATH" { sub(/^[^=]*=/, ""); print; exit }'
@@ -253,15 +300,9 @@ printf 'Source changed since the last start; refreshing: %s\n' "${volumes_to_ref
 # a second stack on the same host (a beta instance started with a different
 # COMPOSE_PROJECT_NAME, say) that also declares a volume keyed `codeman-dist`
 # shares that label, and `head -n1` would pick whichever the daemon happens to
-# list first. Scope the lookup to THIS stack's own resolved project name so it
-# can only ever match this stack's volume. The name is read from the resolved
-# config's top-level `name` key, indentation-agnostic (the formatting is not a
-# contract), and the FIRST `name` in the output is the project's: nested ones
-# (a network's `name:`) come later. `--format json` needs Compose v2.3+.
-project_name=$(
-  "${compose_command[@]}" config --format json 2>/dev/null |
-    sed -n 's/^[[:space:]]*"name":[[:space:]]*"\([^"]*\)".*$/\1/p' | head -n1
-)
+# list first. Scope the lookup to THIS stack's own resolved project name
+# (`$project_name`, resolved once near the top of this script - see the
+# collision guard there) so it can only ever match this stack's volume.
 
 "${compose_command[@]}" down
 
