@@ -58,10 +58,18 @@ project_name=$(
 # colliding. A first-ever deployment, or a repeat run against this SAME
 # checkout, finds no mismatch and proceeds untouched.
 if [[ -n "$project_name" ]]; then
+  # `|| true` on the pipeline's LAST command: under `set -o pipefail`, `grep -v`
+  # exits 1 when nothing survives the filter — the ordinary, no-collision case,
+  # since `docker ps` finds nothing at all on a first-ever deployment or a
+  # single matching (own) working_dir gets filtered out. Without it, that exit
+  # status propagates through the command substitution and `set -e` aborts the
+  # WHOLE script right here, every time, regardless of whether a collision
+  # actually exists — caught only by actually running this end-to-end (a
+  # static text/regex check on the source cannot see it).
   other_working_dir=$(
     docker ps -a --filter "label=com.docker.compose.project=$project_name" \
       --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null |
-      grep -v -F -x -- "$script_dir" | head -n1
+      grep -v -F -x -- "$script_dir" | head -n1 || true
   )
   if [[ -n "$other_working_dir" ]]; then
     printf 'Error: Compose project "%s" is already in use by a DIFFERENT checkout:\n' "$project_name" >&2

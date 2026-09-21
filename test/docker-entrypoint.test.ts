@@ -21,7 +21,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -200,6 +200,108 @@ describe('Start-Codeman.sh', () => {
     // project_name is resolved exactly once and reused by the later
     // volume-refresh scoping - a second resolution could drift from the first.
     expect(startScript.match(/^project_name=\$\(/m)?.length ?? 0).toBe(1);
+  });
+
+  describe('the guard, actually executed (not just checked as text)', () => {
+    /**
+     * A static text/regex check on the source cannot see a runtime-only bug,
+     * and this guard shipped with exactly one: under `set -o pipefail`, `grep
+     * -v` legitimately exits 1 when nothing survives the filter - the
+     * ORDINARY, no-collision case - and without `|| true` on the pipeline
+     * that exit status propagates through the command substitution and `set
+     * -e` aborts the WHOLE script at the guard, every single time, whether a
+     * collision exists or not. Caught only by running the real guard block
+     * against a stub `docker`, extracted from the live source the same way
+     * the `git_head_commit` tests below extract that function - so a
+     * regression here fails a real execution, not a string match.
+     */
+    let dir: string;
+    let binDir: string;
+
+    beforeAll(() => {
+      dir = mkdtempSync(join(tmpdir(), 'codeman-guard-smoke-'));
+      binDir = join(dir, 'bin');
+      mkdirSync(binDir);
+      const stub = [
+        '#!/usr/bin/env bash',
+        'if [[ "$1" == "compose" ]]; then',
+        '  shift',
+        '  if [[ " $* " == *" config "* && " $* " == *" --format json "* ]]; then',
+        // Real `docker compose config --format json` pretty-prints; `"name"`
+        // starting its own line is what the sed extraction anchors on.
+        '    printf \'{\\n  "name": "codeman"\\n}\\n\'',
+        '    exit 0',
+        '  fi',
+        '  exit 0',
+        'fi',
+        'if [[ "$1" == "ps" && -n "${STUB_PS_WORKING_DIR:-}" ]]; then',
+        '  echo "$STUB_PS_WORKING_DIR"',
+        '  exit 0',
+        'fi',
+        'exit 0',
+      ].join('\n');
+      const stubPath = join(binDir, 'docker');
+      writeFileSync(stubPath, stub);
+      execFileSync('bash', ['-c', `chmod +x '${stubPath}'`]);
+    });
+
+    afterAll(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    const runGuard = (
+      scriptDir: string,
+      extraEnv: Record<string, string> = {}
+    ): { stdout: string; stderr: string; status: number } => {
+      const harness = [
+        'set -euo pipefail',
+        'script_dir="$1"',
+        'compose_command=(docker compose)',
+        // Same range the `builds before taking the stack down` test above
+        // pins as the guard's own boundaries: from where project_name is
+        // resolved to the outer if's closing, unindented `fi`.
+        `eval "$(sed -n '/^project_name=\\$(/,/^fi$/p' "$2")"`,
+        'echo "GUARD_PASSED_WITHOUT_ABORTING"',
+      ].join('\n');
+      try {
+        const stdout = execFileSync('bash', ['-c', harness, '_', scriptDir, join(ROOT, 'docker/Start-Codeman.sh')], {
+          encoding: 'utf-8',
+          env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, ...extraEnv },
+        });
+        return { stdout, stderr: '', status: 0 };
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string; status?: number };
+        return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', status: e.status ?? 1 };
+      }
+    };
+
+    it('does NOT abort the ordinary, no-collision case (docker ps finds nothing)', () => {
+      const { stdout, stderr, status } = runGuard('/this/checkout/docker');
+      expect(status).toBe(0);
+      expect(stdout).toContain('GUARD_PASSED_WITHOUT_ABORTING');
+      expect(stderr).toBe('');
+    });
+
+    it('refuses when docker ps reports a DIFFERENT working_dir for the same project', () => {
+      const { stdout, stderr, status } = runGuard('/this/checkout/docker', {
+        STUB_PS_WORKING_DIR: '/some/other/checkout/docker',
+      });
+      expect(status).toBe(1);
+      expect(stdout).not.toContain('GUARD_PASSED_WITHOUT_ABORTING');
+      expect(stderr).toMatch(/already in use by a DIFFERENT checkout/);
+      expect(stderr).toContain('/some/other/checkout/docker');
+    });
+
+    it('does NOT abort when docker ps reports back THIS checkout\u2019s own working_dir (a repeat run)', () => {
+      // The filter excludes an exact match on script_dir - a second start
+      // against the SAME checkout must never trip its own guard.
+      const { stdout, stderr, status } = runGuard('/this/checkout/docker', {
+        STUB_PS_WORKING_DIR: '/this/checkout/docker',
+      });
+      expect(status).toBe(0);
+      expect(stdout).toContain('GUARD_PASSED_WITHOUT_ABORTING');
+      expect(stderr).toBe('');
+    });
   });
 });
 
