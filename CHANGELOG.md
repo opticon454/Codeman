@@ -1,5 +1,9 @@
 # aicodeman
 
+## 20260925-1305
+
+- Added static Git name and email configuration to the server and Docker-case agent image builds.
+
 ## 1.33.0
 
 ### Minor Changes
