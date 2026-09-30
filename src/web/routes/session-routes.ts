@@ -71,6 +71,7 @@ import {
   getLlamaSwapStatus,
   triggerLlamaSwapLoad,
   exceedsSafeContextFloor,
+  slotPoolContext,
   CLAUDE_MIN_SAFE_CONTEXT_TOKENS,
 } from './custom-model-routes.js';
 import { matchesPattern } from '../../config/cli-registry/patterns.js';
@@ -1500,6 +1501,8 @@ export function registerSessionRoutes(
       return createErrorResponse(ApiErrorCode.NOT_FOUND, 'Model endpoint not found');
     }
     const contextLength = endpoint.modelContextLengths?.[body.modelId];
+    const slotCount = endpoint.modelSlotCounts?.[body.modelId];
+    const serverContext = endpoint.modelServerContexts?.[body.modelId];
 
     // Some CLIs (today: only claude) carry enough of their own fixed system-prompt/tool-
     // schema overhead that a small enough real context guarantees a first-message failure
@@ -1510,12 +1513,18 @@ export function registerSessionRoutes(
     // `confirmed`, which still means both) — NOT by `confirmedSwap`: this warning is
     // about the caller's own session, and the swap warning below is about someone
     // else's, so an answer to one is not consent to the other.
-    if (!(body.confirmed || body.confirmedContext) && exceedsSafeContextFloor(entry, contextLength)) {
+    if (
+      !(body.confirmed || body.confirmedContext) &&
+      exceedsSafeContextFloor(entry, contextLength, slotCount, serverContext)
+    ) {
       return {
         requiresContextWarning: true,
         modelId: body.modelId,
         contextLength,
         minSafeContextTokens: CLAUDE_MIN_SAFE_CONTEXT_TOKENS,
+        ...(slotCount && slotCount > 1
+          ? { slotCount, poolContext: slotPoolContext(contextLength ?? 0, serverContext) }
+          : {}),
       };
     }
 
@@ -4250,6 +4259,8 @@ export function registerSessionRoutes(
       const cmEndpoint = cmHosts.find((h) => h.id === customModel.endpointId);
       if (!cmEndpoint) return createErrorResponse(ApiErrorCode.NOT_FOUND, 'Model endpoint not found');
       const cmContextLength = cmEndpoint.modelContextLengths?.[customModel.modelId];
+      const cmSlotCount = cmEndpoint.modelSlotCounts?.[customModel.modelId];
+      const cmServerContext = cmEndpoint.modelServerContexts?.[customModel.modelId];
 
       // See the dedicated route's own comment for the full reasoning: some CLIs' own fixed
       // overhead can exceed a small enough real context on the very first message,
@@ -4259,13 +4270,16 @@ export function registerSessionRoutes(
       // `confirmedSwap`.
       if (
         !(customModel.confirmed || customModel.confirmedContext) &&
-        exceedsSafeContextFloor(cmEntry, cmContextLength)
+        exceedsSafeContextFloor(cmEntry, cmContextLength, cmSlotCount, cmServerContext)
       ) {
         return {
           requiresContextWarning: true,
           modelId: customModel.modelId,
           contextLength: cmContextLength,
           minSafeContextTokens: CLAUDE_MIN_SAFE_CONTEXT_TOKENS,
+          ...(cmSlotCount && cmSlotCount > 1
+            ? { slotCount: cmSlotCount, poolContext: slotPoolContext(cmContextLength ?? 0, cmServerContext) }
+            : {}),
         };
       }
 
