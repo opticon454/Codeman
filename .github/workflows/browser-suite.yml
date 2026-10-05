@@ -11,6 +11,8 @@ name: Browser suite
 # codex-predictive-echo (needs a real, authenticated codex binary).
 
 on:
+  push:
+    branches: [ci/nightly-try] # TEMPORARY: run once on the fork; not part of the proposed workflow
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
