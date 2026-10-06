@@ -541,6 +541,8 @@ const VoiceInput = {
   WEBSPEECH_START_GRACE_MS: 8000,
   /** How long it stays listening after the last phrase before it ends the session by itself. */
   WEBSPEECH_PAUSE_MS: 4000,
+  /** Most times one session re-arms a recogniser that ended by itself (see _onWebSpeechEnd). */
+  WEBSPEECH_MAX_RESTARTS: 40,
   recognition: null,
   isRecording: false,
   supported: false,
@@ -834,6 +836,8 @@ const VoiceInput = {
     this._activeProvider = 'webspeech';
     this._accumulatedFinal = '';
     this._insertedLength = 0;
+    this._webSpeechRestarts = 0;
+    this._lastResultAt = 0;
     this._lastTranscript = '';
     this._hasReceivedResult = false;
     this._recordingStartedAt = Date.now();
@@ -922,11 +926,16 @@ const VoiceInput = {
     }
 
     if (finalText) {
+      this._lastResultAt = Date.now();
       // A phrase is finished: put it in the prompt and KEEP LISTENING. This used to stop the session
       // at the first final result, which is a pause in the speech and nothing more, so a person who
       // said a word, drew breath and carried on found the microphone already off (about two seconds in).
       // The session now ends on a tap, or after WEBSPEECH_PAUSE_MS of quiet (the timer above).
-      this._accumulatedFinal += finalText;
+      // A restarted recogniser starts its transcript afresh, usually without the leading space an
+      // in-session continuation carries, so join phrases with exactly one.
+      const joined = this._accumulatedFinal;
+      this._accumulatedFinal =
+        joined && !/\s$/.test(joined) && !/^\s/.test(finalText) ? `${joined} ${finalText}` : joined + finalText;
       this._flushToPrompt();
       this._showPreview('Listening...');
     } else if (interim) {
@@ -944,6 +953,13 @@ const VoiceInput = {
     if (this._retryCount > 0 && (event.error === 'aborted' || event.error === 'no-speech')) return;
 
     const wasRecording = this.isRecording;
+    // Having dictated something, a quiet spell ending the recogniser is the normal end: put the text in
+    // the prompt and stop without a complaint.
+    if (wasRecording && this._hasReceivedResult && (event.error === 'no-speech' || event.error === 'aborted')) {
+      this._flushToPrompt();
+      this.stop();
+      return;
+    }
     this.stop();
     if (!wasRecording) return;
 
@@ -995,6 +1011,24 @@ const VoiceInput = {
         this.stop();
       }
       return;
+    }
+
+    // The engine ended by ITSELF after a phrase. Chrome and Edge on Android ignore `continuous`, so
+    // the recogniser stops at the first pause however it was configured. If the person has not stopped
+    // it and the quiet window has not run out, listen again: the silence timer set by the last result
+    // is what ends the session.
+    if (
+      this._hasReceivedResult &&
+      this._webSpeechRestarts < this.WEBSPEECH_MAX_RESTARTS &&
+      Date.now() - this._lastResultAt < this.WEBSPEECH_PAUSE_MS
+    ) {
+      this._webSpeechRestarts += 1;
+      try {
+        this.recognition.start();
+        return;
+      } catch (_e) {
+        /* could not re-arm: end the session below */
+      }
     }
 
     // Genuine end — finalize any accumulated text
