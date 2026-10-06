@@ -1,0 +1,5 @@
+---
+"aicodeman": patch
+---
+
+Voice dictation with the browser's own speech service (no Deepgram key) no longer ends itself a couple of seconds after "Listening…" on Android, and no longer does so silently. Three causes: a flat 3 s silence timer started at the tap, before the speech service was even listening, so anyone who took a moment to begin (or a service that took a moment to start) was cut off, and it is now 8 s from the moment the engine reports it is listening, then the usual 3 s of quiet once speech starts or a result arrives; a second microphone capture (`getUserMedia`, only for the cosmetic level meter) opened at the same moment as the recogniser, which on Android makes the speech service end after a second or two, and it is no longer opened on Android; and every self-ending (`no-speech`, `aborted`, `audio-capture`, `service-not-allowed`, a bare `onend` with nothing heard, the silence timer) was silent, so it looked like a dead button, and each now says what happened and, where it applies, points at Deepgram in Settings > Voice.

@@ -537,6 +537,8 @@ const ClaudeVoiceProvider = {
  * Inserts final text into the active session (user presses Enter to submit).
  */
 const VoiceInput = {
+  /** How long the speech recogniser may stay silent after it starts listening before the session ends. */
+  WEBSPEECH_START_GRACE_MS: 8000,
   recognition: null,
   isRecording: false,
   supported: false,
@@ -656,6 +658,16 @@ const VoiceInput = {
     this.recognition.onresult = (e) => this._onWebSpeechResult(e);
     this.recognition.onerror = (e) => this._onWebSpeechError(e);
     this.recognition.onend = () => this._onWebSpeechEnd();
+    // The engine is only really listening from `audiostart`: on a phone it can take a second or two to
+    // come up after start(), and the person needs a moment to begin talking. The silence timer is
+    // therefore restarted with a generous grace period then, and cut to the normal short pause once
+    // speech has actually been heard (see _resetSilenceTimeout).
+    this.recognition.onaudiostart = () => {
+      if (this.isRecording && !this._hasReceivedResult) this._resetSilenceTimeout(this.WEBSPEECH_START_GRACE_MS);
+    };
+    this.recognition.onspeechstart = () => {
+      if (this.isRecording) this._resetSilenceTimeout();
+    };
   },
 
   toggle() {
@@ -835,8 +847,14 @@ const VoiceInput = {
         return;
       }
     }
-    this._resetSilenceTimeout();
-    // Get mic stream for level meter (non-blocking — level meter is cosmetic)
+    this._resetSilenceTimeout(this.WEBSPEECH_START_GRACE_MS);
+    // Get mic stream for level meter (non-blocking — level meter is cosmetic).
+    //
+    // ⚠️ Not on Android. There the recogniser and getUserMedia compete for the one microphone: opening
+    // a second capture while the speech service is starting makes the service end after a second or two
+    // (`aborted` / `audio-capture` / a silent end), which reads as "Listening… then it just stops".
+    // The meter is cosmetic; the recording is not.
+    if (/Android/i.test(navigator.userAgent || '')) return;
     navigator.mediaDevices?.getUserMedia({ audio: true }).then(stream => {
       if (this.isRecording && this._activeProvider === 'webspeech') {
         this._webSpeechStream = stream;
@@ -922,18 +940,31 @@ const VoiceInput = {
     this.stop();
     if (!wasRecording) return;
 
+    // Every ending that was not the person's own tap says why. These used to be silent, so a
+    // recogniser that stopped itself after a second or two looked like a broken button.
     switch (event.error) {
       case 'not-allowed':
         app.showToast('Microphone access denied. Check browser settings.', 'error');
         break;
+      case 'service-not-allowed':
+        app.showToast(
+          'This browser does not allow its speech service here. Add a Deepgram key in Settings > Voice to dictate.',
+          'error'
+        );
+        break;
+      case 'audio-capture':
+        app.showToast('No microphone found, or another app is using it.', 'error');
+        break;
       case 'no-speech':
-        // Silent — auto-stop is enough feedback
+        app.showToast("Didn't hear anything. Tap the mic and start talking.", 'info');
         break;
       case 'network':
         app.showToast('Voice input requires internet connection.', 'error');
         break;
       case 'aborted':
-        // User cancelled — no message needed
+        // `stop()` ends a session with onend, not 'aborted': this is the browser or another app taking the
+        // microphone away from the recogniser.
+        app.showToast('Voice input was interrupted (something else took the microphone).', 'warning');
         break;
       default:
         app.showToast('Voice input error: ' + event.error, 'error');
@@ -962,6 +993,13 @@ const VoiceInput = {
     // Genuine end — finalize any accumulated text
     if (this._accumulatedFinal) {
       this._insertText(this._accumulatedFinal);
+    } else if (!this._hasReceivedResult) {
+      // The recogniser stopped itself having heard nothing: say so rather than just un-pressing the button.
+      app.showToast(
+        `Voice input stopped after ${Math.max(1, Math.round(elapsed / 1000))} s without hearing anything. ` +
+          'If it keeps doing that in this browser, add a Deepgram key in Settings > Voice.',
+        'warning'
+      );
     }
     this.stop();
   },
@@ -1136,17 +1174,24 @@ const VoiceInput = {
     textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
   },
 
-  _resetSilenceTimeout() {
+  /**
+   * Stop after `ms` of quiet. `3000` is the pause after speech; the wait before anything has been said
+   * is `WEBSPEECH_START_GRACE_MS`, because a phone's speech service takes a moment to start listening
+   * and the person a moment to begin, and a flat 3 s from the tap ended sessions nobody had spoken in.
+   */
+  _resetSilenceTimeout(ms = 3000) {
     clearTimeout(this.silenceTimeout);
     this.silenceTimeout = setTimeout(() => {
       if (this.isRecording) {
         // Finalize any accumulated text before stopping
         if (this._accumulatedFinal) {
           this._insertText(this._accumulatedFinal);
+        } else if (!this._hasReceivedResult) {
+          app.showToast("Didn't hear anything. Tap the mic and start talking.", 'info');
         }
         this.stop();
       }
-    }, 3000);
+    }, ms);
   },
 
   _iosStabilityCheck(transcript) {
