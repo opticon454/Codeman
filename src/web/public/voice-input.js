@@ -551,6 +551,37 @@ const VoiceInput = {
     if (this._dbgLines.length > 300) this._dbgLines.shift();
     this._dbgRender();
   },
+  /**
+   * With the log on, also record what the PAGE sees: size and visibility changes, focus moving, and toasts.
+   * Opening the keyboard's own voice typing flashes the page and shows "Another device is setting the
+   * width"; this is how to see which events do it and in what order.
+   */
+  _dbgPageEvents() {
+    const dims = () =>
+      `inner=${window.innerWidth}x${window.innerHeight} visual=${Math.round(window.visualViewport?.width || 0)}x${Math.round(window.visualViewport?.height || 0)}`;
+    const el = (t) => (t && t.tagName ? `${t.tagName.toLowerCase()}${t.id ? '#' + t.id : ''}${t.className && typeof t.className === 'string' ? '.' + t.className.split(' ')[0] : ''}` : String(t));
+    window.addEventListener('resize', () => this._dbg(`window resize ${dims()}`));
+    window.visualViewport?.addEventListener('resize', () => this._dbg(`visualViewport resize ${dims()}`));
+    document.addEventListener('visibilitychange', () => this._dbg(`visibility=${document.visibilityState}`));
+    window.addEventListener('pagehide', () => this._dbg('pagehide'));
+    window.addEventListener('pageshow', () => this._dbg('pageshow'));
+    window.addEventListener('focus', () => this._dbg('window focus'));
+    window.addEventListener('blur', () => this._dbg('window blur'));
+    document.addEventListener('focusin', (e) => this._dbg(`focusin ${el(e.target)}`), true);
+    document.addEventListener('focusout', (e) => this._dbg(`focusout ${el(e.target)}`), true);
+    // Toasts, once the app exists: what the person was told, and when.
+    setTimeout(() => {
+      if (typeof app === 'undefined' || !app.showToast || app.__voiceDbgToast) return;
+      app.__voiceDbgToast = true;
+      const original = app.showToast.bind(app);
+      app.showToast = (msg, kind, ...rest) => {
+        this._dbg(`toast[${kind}]: ${String(msg).slice(0, 110)}`);
+        return original(msg, kind, ...rest);
+      };
+    }, 1500);
+    this._dbg(`start state: ${dims()} visibility=${document.visibilityState}`);
+  },
+
   _dbgRender() {
     if (typeof document === 'undefined' || !document.body) return;
     let box = document.getElementById('voiceDebugLog');
@@ -1584,6 +1615,7 @@ const VoiceInput = {
     else if (q === '0') localStorage.removeItem('codeman-voice-debug');
     VoiceInput._dbgOn = localStorage.getItem('codeman-voice-debug') === '1';
     if (VoiceInput._dbgOn) VoiceInput._dbg(`voice debug on (${location.pathname})`);
+    if (VoiceInput._dbgOn) VoiceInput._dbgPageEvents();
   } catch {
     /* storage unavailable: the log stays off */
   }
