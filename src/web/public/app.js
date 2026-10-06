@@ -1234,7 +1234,12 @@ class CodemanApp {
       const addKeyboardTapFix = (container) => {
         if (!container) return;
         container.addEventListener('touchstart', (e) => {
-          if (!KeyboardHandler.keyboardVisible) return;
+          // `keyboardVisible` comes from visualViewport and can lag or miss on some browsers (Edge for
+          // Android resizes the layout instead), and then the first tap on ANY toolbar button, the mic
+          // included, took focus from the terminal: the keyboard dropped away and only a second tap
+          // reached the button. A focused terminal input counts as "the keyboard is up" too.
+          const typing = document.activeElement?.classList?.contains('xterm-helper-textarea');
+          if (!KeyboardHandler.keyboardVisible && !typing) return;
           const btn = e.target.closest('button');
           if (!btn) return;
           e.preventDefault();
