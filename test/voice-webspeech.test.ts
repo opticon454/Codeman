@@ -188,6 +188,67 @@ describe('Web Speech on a phone', () => {
     expect(t.toasts).toEqual([]);
   });
 
+  // Chrome and Edge on Android ignore `continuous = true`: the recogniser ends at the first pause, however
+  // it was configured. Without re-arming it the session stopped after one word.
+  it('re-arms a recogniser that ended by itself right after a phrase, so a second phrase is heard', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    const rec = FakeRecognition.last!;
+    rec.onresult!(phrase('testing', true, 0));
+    t.advance(300);
+    rec.onend!(); // Android: the engine is done after one utterance
+    expect(rec.started).toBe(2); // listening again
+    expect(t.voice.isRecording).toBe(true);
+    expect(t.toasts).toEqual([]);
+
+    t.advance(1_000);
+    rec.onresult!(phrase('this is the second part', true, 0)); // a fresh transcript, index 0 again
+    expect(t.voice._insertText).toHaveBeenCalledTimes(2);
+    expect(t.voice._insertText).toHaveBeenLastCalledWith(' this is the second part', { keepLeadingSpace: true });
+    expect(t.voice._accumulatedFinal).toBe('testing this is the second part'); // one space between phrases
+  });
+
+  it('does not re-arm once the quiet window has run out, or after the person stopped it', () => {
+    const late = boot(ANDROID_EDGE);
+    late.voice.start();
+    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    late.advance(3_900); // still inside the window...
+    late.voice._lastResultAt -= 5_000; // ...but pretend the last phrase was long ago
+    FakeRecognition.last!.onend!();
+    expect(FakeRecognition.last!.started).toBe(1);
+    expect(late.voice.isRecording).toBe(false);
+
+    const tapped = boot(ANDROID_EDGE);
+    tapped.voice.start();
+    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    tapped.voice.stop();
+    FakeRecognition.last!.onend!();
+    expect(FakeRecognition.last!.started).toBe(1);
+  });
+
+  it('is bounded: a recogniser that keeps ending is re-armed a limited number of times', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    const rec = FakeRecognition.last!;
+    rec.onresult!(phrase('hello', true, 0));
+    for (let i = 0; i < 100 && t.voice.isRecording; i += 1) {
+      t.voice._lastResultAt = Date.now(); // each cycle counts as just having heard speech
+      rec.onend!();
+    }
+    expect(rec.started).toBe(1 + t.voice.WEBSPEECH_MAX_RESTARTS);
+    expect(t.voice.isRecording).toBe(false);
+  });
+
+  it('a quiet spell ending the recogniser after dictation is a normal end: text stays, no complaint', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onerror!({ error: 'no-speech' });
+    expect(t.voice.isRecording).toBe(false);
+    expect(t.toasts).toEqual([]);
+    expect(t.voice._insertText).toHaveBeenCalledTimes(1);
+  });
+
   it('the engine ending by itself after phrases inserts nothing new and does not complain', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
