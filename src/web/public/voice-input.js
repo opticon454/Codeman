@@ -915,22 +915,21 @@ const VoiceInput = {
     if (!this.isRecording) return;
     this._hasReceivedResult = true;
     this._resetSilenceTimeout();
-    // The whole transcript of the final results so far in THIS recogniser session, plus whatever is
-    // still interim. Not just the entries from `resultIndex`: Chrome on Android re-sends the running
-    // sentence as one "final" result on every update ("testing", "testing can", "testing can you"...),
-    // so adding each event's final text would put the sentence into the prompt again and again. As the
-    // session's whole transcript it is simply the latest version of the same text, and
-    // _flushToPrompt inserts only what has not been inserted yet.
-    let sessionFinal = '';
-    let interim = '';
+    // The transcript of THIS recogniser session so far: every final result, then the interim one.
+    // Chrome and Edge on Android do not deliver separate phrases. Each update arrives as a NEW entry
+    // holding the whole running sentence ("alright", "alright let's", "alright let's try", ...), all
+    // flagged final, so concatenating the entries (or taking just the new one) put the sentence into
+    // the prompt again for every update. _joinCumulative collapses such a chain to its last entry and
+    // leaves genuinely separate phrases alone; _flushToPrompt then inserts only what is new.
+    const finals = [];
+    const interims = [];
     for (let i = 0; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        sessionFinal += sessionFinal && !/\s$/.test(sessionFinal) && !/^\s/.test(transcript) ? ` ${transcript}` : transcript;
-      } else if (i >= event.resultIndex) {
-        interim += transcript;
-      }
+      if (event.results[i].isFinal) finals.push(transcript);
+      else if (i >= event.resultIndex) interims.push(transcript);
     }
+    const sessionFinal = this._joinCumulative(finals);
+    const interim = this._joinCumulative(interims);
 
     if (sessionFinal) {
       this._lastResultAt = Date.now();
@@ -943,7 +942,9 @@ const VoiceInput = {
       // said a word, drew breath and carried on found the microphone already off (about two seconds in).
       // The session now ends on a tap, or after WEBSPEECH_PAUSE_MS of quiet (the timer above).
       this._flushToPrompt();
-      this._showPreview(interim ? this._accumulatedFinal + interim : 'Listening...');
+      // An interim entry that merely extends the final text is the same words, not more of them.
+      const extendsFinal = interim && interim.trim().toLowerCase().startsWith(sessionFinal.trim().toLowerCase());
+      this._showPreview(interim ? (extendsFinal ? base ? `${base} ${interim.trim()}` : interim : this._accumulatedFinal + interim) : 'Listening...');
     } else if (interim) {
       const display = this._accumulatedFinal + interim;
       this._showPreview(display);
@@ -1242,6 +1243,24 @@ const VoiceInput = {
         this.stop();
       }
     }, ms);
+  },
+
+  /**
+   * Join result entries into one transcript, treating an entry that merely EXTENDS the one before it
+   * (same words, more of them) as that entry's replacement rather than a new phrase.
+   */
+  _joinCumulative(entries) {
+    const parts = [];
+    const norm = (text) => text.trim().toLowerCase();
+    for (const entry of entries) {
+      if (!entry || !entry.trim()) continue;
+      const last = parts.length ? norm(parts[parts.length - 1]) : null;
+      if (last !== null && norm(entry).startsWith(last)) parts[parts.length - 1] = entry;
+      else parts.push(entry);
+    }
+    let out = '';
+    for (const part of parts) out += out && !/\s$/.test(out) && !/^\s/.test(part) ? ` ${part}` : part;
+    return out;
   },
 
   _isIOS() {
