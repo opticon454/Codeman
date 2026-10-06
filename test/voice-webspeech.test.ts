@@ -133,7 +133,7 @@ describe('Web Speech on a phone', () => {
     expect(t.toasts).toEqual([["Didn't hear anything. Tap the mic and start talking.", 'info']]); // and says so
   });
 
-  it('starts the grace period when the engine really begins listening, then 3 s after speech starts', () => {
+  it('starts the grace period when the engine really begins listening, then 4 s of quiet after speech starts', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
     t.advance(2_000);
@@ -141,24 +141,87 @@ describe('Web Speech on a phone', () => {
     t.advance(7_900);
     expect(t.voice.isRecording).toBe(true);
     FakeRecognition.last!.onspeechstart!(); // the person speaks: the normal short pause applies
-    t.advance(2_900);
+    t.advance(3_900);
     expect(t.voice.isRecording).toBe(true);
     t.advance(200);
     expect(t.voice.isRecording).toBe(false);
   });
 
-  it('a result keeps it going for another 3 s of quiet', () => {
+  const phrase = (text: string, isFinal: boolean, index = 0) => ({
+    resultIndex: index,
+    results: Object.assign(
+      Array.from({ length: index + 1 }, (_, n) =>
+        n === index
+          ? Object.assign([{ transcript: text }], { isFinal })
+          : Object.assign([{ transcript: '' }], { isFinal: true })
+      ),
+      {}
+    ),
+  });
+
+  it('keeps listening after a finished phrase, and puts each phrase in the prompt once', () => {
     const t = boot(ANDROID_EDGE);
-    t.voice._iosStabilityCheck = () => {}; // the 750 ms "interim stopped changing" finaliser is a separate rule
     t.voice.start();
-    FakeRecognition.last!.onresult!({
-      resultIndex: 0,
-      results: [Object.assign([{ transcript: 'hello' }], { isFinal: false })],
-    });
-    t.advance(2_900);
+    FakeRecognition.last!.onresult!(phrase('testing', true, 0)); // what Android hands back after a pause
+    expect(t.voice.isRecording).toBe(true); // used to stop here, about two seconds in
+    expect(t.voice._insertText).toHaveBeenCalledTimes(1);
+    expect(t.voice._insertText).toHaveBeenLastCalledWith('testing', { keepLeadingSpace: false });
+
+    t.advance(1_500);
+    FakeRecognition.last!.onresult!(phrase(' this keeps going', true, 1));
+    expect(t.voice.isRecording).toBe(true);
+    expect(t.voice._insertText).toHaveBeenCalledTimes(2);
+    expect(t.voice._insertText).toHaveBeenLastCalledWith(' this keeps going', { keepLeadingSpace: true });
+  });
+
+  it('ends 4 s after the LAST phrase, without inserting anything a second time', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(phrase('one', true, 0));
+    t.advance(2_000);
+    FakeRecognition.last!.onresult!(phrase(' two', true, 1)); // restarts the quiet timer
+    t.advance(3_900);
     expect(t.voice.isRecording).toBe(true);
     t.advance(200);
     expect(t.voice.isRecording).toBe(false);
+    expect(t.voice._insertText).toHaveBeenCalledTimes(2); // 'one' and ' two', not 'one two' again at the end
+    expect(t.toasts).toEqual([]);
+  });
+
+  it('the engine ending by itself after phrases inserts nothing new and does not complain', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    t.advance(6_000);
+    FakeRecognition.last!.onend!();
+    expect(t.voice._insertText).toHaveBeenCalledTimes(1);
+    expect(t.toasts).toEqual([]);
+  });
+
+  it('compose mode keeps the editor holding everything dictated so far, replacing rather than appending', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice._getDeepgramConfig = () => ({ insertMode: 'compose' });
+    t.voice.start();
+    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onresult!(phrase(' world', true, 1));
+    expect(t.voice._insertText.mock.calls.map((c: unknown[]) => c[0])).toEqual(['hello', 'hello world']);
+  });
+
+  it('a pause in an interim phrase does NOT end the session on Android, but still does on iOS (no finals there)', () => {
+    const android = boot(ANDROID_EDGE);
+    android.voice.start();
+    FakeRecognition.last!.onresult!(phrase('testing', false, 0));
+    android.advance(1_000);
+    expect(android.voice.isRecording).toBe(true); // the 750 ms "stopped changing" rule is iOS-only
+
+    const ios = boot(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    );
+    ios.voice.start();
+    FakeRecognition.last!.onresult!(phrase('testing', false, 0));
+    ios.advance(800);
+    expect(ios.voice.isRecording).toBe(false);
+    expect(ios.voice._insertText).toHaveBeenCalledWith('testing', { keepLeadingSpace: false });
   });
 
   it.each([
@@ -215,7 +278,7 @@ describe('Web Speech on a phone', () => {
     t.voice._accumulatedFinal = 'hello world';
     t.advance(2_000);
     FakeRecognition.last!.onend!();
-    expect(t.voice._insertText).toHaveBeenCalledWith('hello world');
+    expect(t.voice._insertText).toHaveBeenCalledWith('hello world', { keepLeadingSpace: false });
     expect(t.toasts).toEqual([]);
   });
 });

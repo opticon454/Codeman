@@ -51,6 +51,7 @@ export const BROWSER_TEST_GLOBS = [
   'test/run-mode-menu-scroll.browser.test.ts',
   'test/markdown-anchor-links.browser.test.ts',
   'test/fullscreen-tab-switch-capture.browser.test.ts',
+  'test/voice-mic-tap.browser.test.ts',
 ];
 
 /**

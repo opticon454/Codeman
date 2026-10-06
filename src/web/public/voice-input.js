@@ -539,6 +539,8 @@ const ClaudeVoiceProvider = {
 const VoiceInput = {
   /** How long the speech recogniser may stay silent after it starts listening before the session ends. */
   WEBSPEECH_START_GRACE_MS: 8000,
+  /** How long it stays listening after the last phrase before it ends the session by itself. */
+  WEBSPEECH_PAUSE_MS: 4000,
   recognition: null,
   isRecording: false,
   supported: false,
@@ -831,6 +833,7 @@ const VoiceInput = {
     this.isRecording = true;
     this._activeProvider = 'webspeech';
     this._accumulatedFinal = '';
+    this._insertedLength = 0;
     this._lastTranscript = '';
     this._hasReceivedResult = false;
     this._recordingStartedAt = Date.now();
@@ -919,16 +922,20 @@ const VoiceInput = {
     }
 
     if (finalText) {
+      // A phrase is finished: put it in the prompt and KEEP LISTENING. This used to stop the session
+      // at the first final result, which is a pause in the speech and nothing more, so a person who
+      // said a word, drew breath and carried on found the microphone already off (about two seconds in).
+      // The session now ends on a tap, or after WEBSPEECH_PAUSE_MS of quiet (the timer above).
       this._accumulatedFinal += finalText;
-      this._hidePreview();
-      this._insertText(this._accumulatedFinal);
-      this.stop();
+      this._flushToPrompt();
+      this._showPreview('Listening...');
     } else if (interim) {
       const display = this._accumulatedFinal + interim;
       this._showPreview(display);
-      // iOS Safari workaround: isFinal is always false.
-      // Detect when interim results stop changing for 750ms → treat as final.
-      this._iosStabilityCheck(interim);
+      // iOS Safari workaround: isFinal is always false there, so a result that stops changing for 750 ms
+      // is treated as final. Everywhere else the engine reports finals, and acting on a 750 ms lull
+      // would end the session at the first breath.
+      if (this._isIOS()) this._iosStabilityCheck(interim);
     }
   },
 
@@ -984,7 +991,7 @@ const VoiceInput = {
         this.recognition.start();
       } catch (_e) {
         // If restart fails, fall through to stop
-        if (this._accumulatedFinal) this._insertText(this._accumulatedFinal);
+        if (this._accumulatedFinal) this._flushToPrompt();
         this.stop();
       }
       return;
@@ -992,7 +999,7 @@ const VoiceInput = {
 
     // Genuine end — finalize any accumulated text
     if (this._accumulatedFinal) {
-      this._insertText(this._accumulatedFinal);
+      this._flushToPrompt();
     } else if (!this._hasReceivedResult) {
       // The recogniser stopped itself having heard nothing: say so rather than just un-pressing the button.
       app.showToast(
@@ -1026,10 +1033,11 @@ const VoiceInput = {
     return Promise.resolve();
   },
 
-  _insertText(text) {
+  _insertText(text, { keepLeadingSpace = false } = {}) {
     const target = this._targetSession();
     if (!target || !text.trim()) return;
-    const trimmed = text.trim();
+    // A later phrase of the same dictation keeps its leading space, so it joins the previous one.
+    const trimmed = keepLeadingSpace ? ` ${text.trim()}` : text.trim();
     const mode = this._getDeepgramConfig().insertMode || 'direct';
 
     if (mode === 'compose') {
@@ -1179,13 +1187,13 @@ const VoiceInput = {
    * is `WEBSPEECH_START_GRACE_MS`, because a phone's speech service takes a moment to start listening
    * and the person a moment to begin, and a flat 3 s from the tap ended sessions nobody had spoken in.
    */
-  _resetSilenceTimeout(ms = 3000) {
+  _resetSilenceTimeout(ms = this.WEBSPEECH_PAUSE_MS) {
     clearTimeout(this.silenceTimeout);
     this.silenceTimeout = setTimeout(() => {
       if (this.isRecording) {
-        // Finalize any accumulated text before stopping
+        // Put anything not yet in the prompt there before stopping
         if (this._accumulatedFinal) {
-          this._insertText(this._accumulatedFinal);
+          this._flushToPrompt();
         } else if (!this._hasReceivedResult) {
           app.showToast("Didn't hear anything. Tap the mic and start talking.", 'info');
         }
@@ -1194,15 +1202,38 @@ const VoiceInput = {
     }, ms);
   },
 
+  _isIOS() {
+    return /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  },
+
+  /**
+   * Put the dictated text that is not in the prompt yet there. Direct mode inserts only the new
+   * part (a space joins it to what is already there); compose mode replaces the editor's text with
+   * everything dictated so far, so nothing is ever inserted twice however a session ends.
+   */
+  _flushToPrompt() {
+    const all = this._accumulatedFinal || '';
+    const done = this._insertedLength || 0;
+    if (all.length <= done) return;
+    const mode = this._getDeepgramConfig().insertMode || 'direct';
+    if (mode === 'compose') {
+      this._insertText(all);
+    } else {
+      const fresh = all.slice(done);
+      this._insertText(done > 0 ? ` ${fresh.trim()}` : fresh, { keepLeadingSpace: done > 0 });
+    }
+    this._insertedLength = all.length;
+  },
+
   _iosStabilityCheck(transcript) {
     if (transcript !== this._lastTranscript) {
       this._lastTranscript = transcript;
       clearTimeout(this._stabilityTimer);
       this._stabilityTimer = setTimeout(() => {
         if (this.isRecording) {
-          const finalText = this._accumulatedFinal + transcript;
+          this._accumulatedFinal += transcript;
           this._hidePreview();
-          this._insertText(finalText);
+          this._flushToPrompt();
           this.stop();
         }
       }, 750);
