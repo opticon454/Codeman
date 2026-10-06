@@ -1242,6 +1242,9 @@ class CodemanApp {
           if (!KeyboardHandler.keyboardVisible && !typing) return;
           const btn = e.target.closest('button');
           if (!btn) return;
+          if (btn.id === 'voiceInputBtnMobile' || btn.id === 'voiceInputBtn') {
+            VoiceInput._dbg(`tap on mic: touchstart handler, keyboardVisible=${KeyboardHandler.keyboardVisible} typing=${typing} cancelable=${e.cancelable}`);
+          }
           e.preventDefault();
           btn.click();
           // Refocus terminal so keyboard stays open (e.g. voice input button)
@@ -1259,6 +1262,11 @@ class CodemanApp {
       // default keeps focus where it was; the click still follows and is handled once, as usual.
       for (const id of ['voiceInputBtnMobile', 'voiceInputBtn']) {
         document.getElementById(id)?.addEventListener('mousedown', (e) => e.preventDefault());
+        document.getElementById(id)?.addEventListener(
+          'click',
+          (e) => VoiceInput._dbg(`click on #${id} trusted=${e.isTrusted} (this is what reaches toggle())`),
+          true
+        );
       }
     }
     // System stats polling deferred until sessions exist (started in handleInit/session:created)

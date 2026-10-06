@@ -40,8 +40,8 @@ class FakeRecognition {
   stop() {}
 }
 
-function boot(userAgent: string) {
-  const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost/', runScripts: 'outside-only' });
+function boot(userAgent: string, url = 'http://localhost/') {
+  const dom = new JSDOM('<!doctype html><body></body>', { url, runScripts: 'outside-only' });
   const win = dom.window as any;
   Object.defineProperty(win.navigator, 'userAgent', { value: userAgent, configurable: true });
   let now = 1_000_000;
@@ -445,5 +445,38 @@ describe('Web Speech on a phone', () => {
     FakeRecognition.last!.onend!();
     expect(t.voice._insertText).toHaveBeenCalledWith('hello world', { keepLeadingSpace: false });
     expect(t.toasts).toEqual([[expect.stringMatching(/Tap the mic to dictate again/), 'info']]);
+  });
+
+  describe('debug log (?voicedebug=1)', () => {
+    it('is off by default: no lines, no panel', () => {
+      const t = boot(ANDROID_EDGE);
+      t.voice.start();
+      t.voice.toggle();
+      expect(t.voice._dbgOn).toBe(false);
+      expect(t.voice._dbgLines).toEqual([]);
+    });
+
+    it('records taps, speech events and the reason for each stop once switched on, and the switch is remembered', () => {
+      const t = boot(ANDROID_EDGE, 'http://localhost/?voicedebug=1');
+      expect(t.voice._dbgOn).toBe(true);
+      t.voice.toggle(); // start
+      FakeRecognition.last!.onaudiostart!();
+      FakeRecognition.last!.onresult!(speech(['hello']));
+      FakeRecognition.last!.onend!();
+      t.voice.toggle(); // stop
+      const log = t.voice._dbgLines.join('\n');
+      expect(log).toMatch(/toggle\(\): isRecording=false -> start/);
+      expect(log).toMatch(/audiostart/);
+      expect(log).toMatch(/result: resultIndex=0 entries=F:"hello"/);
+      expect(log).toMatch(/end: isRecording=true restarts=0/);
+      expect(log).toMatch(/re-arming recogniser \(#1\)/);
+      expect(log).toMatch(/toggle\(\): isRecording=true -> stop/);
+      expect(log).toMatch(/stop\(\): isRecording=true caller=/);
+    });
+
+    it('?voicedebug=0 switches it off again', () => {
+      const t = boot(ANDROID_EDGE, 'http://localhost/?voicedebug=0');
+      expect(t.voice._dbgOn).toBe(false);
+    });
   });
 });

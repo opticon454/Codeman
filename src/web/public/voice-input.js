@@ -537,6 +537,59 @@ const ClaudeVoiceProvider = {
  * Inserts final text into the active session (user presses Enter to submit).
  */
 const VoiceInput = {
+  // ── Debug log (opt-in) ──────────────────────────────────────────────────
+  // Open Codeman with `?voicedebug=1` (remembered on this device; `?voicedebug=0` turns it off) and a
+  // small panel at the top of the screen records every mic tap and speech-engine event with its time,
+  // with a Copy button. For working out what a phone's speech service actually does; off by default.
+  _dbgOn: false,
+  _dbgLines: [],
+  _dbgT0: 0,
+  _dbg(msg) {
+    if (!this._dbgOn) return;
+    if (!this._dbgT0) this._dbgT0 = Date.now();
+    this._dbgLines.push(`${((Date.now() - this._dbgT0) / 1000).toFixed(2)} ${msg}`);
+    if (this._dbgLines.length > 300) this._dbgLines.shift();
+    this._dbgRender();
+  },
+  _dbgRender() {
+    if (typeof document === 'undefined' || !document.body) return;
+    let box = document.getElementById('voiceDebugLog');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'voiceDebugLog';
+      box.style.cssText =
+        'position:fixed;left:0;right:0;top:0;max-height:38vh;overflow:auto;z-index:2147483646;background:#000d;color:#9f9;font:11px monospace;padding:4px;white-space:pre-wrap;word-break:break-all';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:sticky;top:0;background:#222;padding:4px;display:flex;gap:8px';
+      const mk = (label, fn) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.style.cssText = 'font-size:14px;padding:6px 10px';
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', fn);
+        bar.appendChild(b);
+      };
+      mk('Copy', () => {
+        const text = this._dbgLines.join('\n');
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => prompt('Copy:', text));
+        else prompt('Copy:', text);
+      });
+      mk('Clear', () => {
+        this._dbgLines = [];
+        this._dbgRender();
+      });
+      mk('Hide', () => (box.style.display = 'none'));
+      const body = document.createElement('div');
+      body.className = 'voice-debug-body';
+      box.append(bar, body);
+      document.body.appendChild(box);
+    }
+    box.style.display = '';
+    const body = box.querySelector('.voice-debug-body');
+    if (body) body.textContent = this._dbgLines.slice(-80).join('\n');
+    box.scrollTop = box.scrollHeight;
+  },
+
   /** How long the speech recogniser may stay silent after it starts listening before the session ends. */
   WEBSPEECH_START_GRACE_MS: 8000,
   /**
@@ -664,22 +717,39 @@ const VoiceInput = {
     this.recognition.lang = 'en-US';
     this.recognition.maxAlternatives = 1;
 
-    this.recognition.onresult = (e) => this._onWebSpeechResult(e);
-    this.recognition.onerror = (e) => this._onWebSpeechError(e);
-    this.recognition.onend = () => this._onWebSpeechEnd();
+    this.recognition.onresult = (e) => {
+      this._dbg(
+        `result: resultIndex=${e.resultIndex} entries=${[...e.results].map((r) => `${r.isFinal ? 'F' : 'i'}:${JSON.stringify(r[0].transcript)}`).join(' | ')}`
+      );
+      this._onWebSpeechResult(e);
+    };
+    this.recognition.onerror = (e) => {
+      this._dbg(`error: ${e.error} (isRecording=${this.isRecording})`);
+      this._onWebSpeechError(e);
+    };
+    this.recognition.onend = () => {
+      this._dbg(`end: isRecording=${this.isRecording} restarts=${this._webSpeechRestarts} sinceResult=${Date.now() - (this._lastResultAt || 0)}ms`);
+      this._onWebSpeechEnd();
+    };
+    this.recognition.onstart = () => this._dbg('engine start');
+    this.recognition.onsoundstart = () => this._dbg('soundstart');
+    this.recognition.onspeechend = () => this._dbg('speechend');
     // The engine is only really listening from `audiostart`: on a phone it can take a second or two to
     // come up after start(), and the person needs a moment to begin talking. The silence timer is
     // therefore restarted with a generous grace period then, and cut to the normal short pause once
     // speech has actually been heard (see _resetSilenceTimeout).
     this.recognition.onaudiostart = () => {
+      this._dbg('audiostart');
       if (this.isRecording && !this._hasReceivedResult) this._resetSilenceTimeout(this.WEBSPEECH_START_GRACE_MS);
     };
     this.recognition.onspeechstart = () => {
+      this._dbg('speechstart');
       if (this.isRecording) this._resetSilenceTimeout();
     };
   },
 
   toggle() {
+    this._dbg(`toggle(): isRecording=${this.isRecording} -> ${this.isRecording ? 'stop' : 'start'}`);
     if (this.isRecording) {
       this.stop();
     } else {
@@ -827,6 +897,7 @@ const VoiceInput = {
   },
 
   _startWebSpeech() {
+    this._dbg(`_startWebSpeech(): UA=${(navigator.userAgent || '').slice(0, 70)}`);
     // Lazy-init: retry if recognition was cleaned up or not available at page load
     if (!this.recognition) this._initRecognition();
     if (!this.supported) {
@@ -881,6 +952,10 @@ const VoiceInput = {
   },
 
   stop() {
+    if (this._dbgOn) {
+      const caller = (new Error().stack || '').split('\n')[2] || '';
+      this._dbg(`stop(): isRecording=${this.isRecording} caller=${caller.trim().slice(0, 90)}`);
+    }
     if (!this.isRecording) return;
     this.isRecording = false;
     clearTimeout(this.silenceTimeout);
@@ -1033,6 +1108,7 @@ const VoiceInput = {
       Date.now() - this._lastResultAt < this.WEBSPEECH_PAUSE_MS
     ) {
       this._webSpeechRestarts += 1;
+      this._dbg(`re-arming recogniser (#${this._webSpeechRestarts})`);
       // The next session's transcript starts empty: remember everything dictated so far.
       this._baseText = this._accumulatedFinal || '';
       try {
@@ -1237,6 +1313,7 @@ const VoiceInput = {
   _resetSilenceTimeout(ms = this.WEBSPEECH_PAUSE_MS) {
     clearTimeout(this.silenceTimeout);
     this.silenceTimeout = setTimeout(() => {
+      this._dbg(`quiet timer fired after ${ms} ms (isRecording=${this.isRecording})`);
       if (this.isRecording) {
         // Put anything not yet in the prompt there before stopping
         if (this._accumulatedFinal) {
@@ -1498,3 +1575,16 @@ const VoiceInput = {
     this._hasReceivedResult = false;
   }
 };
+
+// Debug log switch: `?voicedebug=1` turns it on for this device, `?voicedebug=0` off.
+(() => {
+  try {
+    const q = new URLSearchParams(location.search).get('voicedebug');
+    if (q === '1') localStorage.setItem('codeman-voice-debug', '1');
+    else if (q === '0') localStorage.removeItem('codeman-voice-debug');
+    VoiceInput._dbgOn = localStorage.getItem('codeman-voice-debug') === '1';
+    if (VoiceInput._dbgOn) VoiceInput._dbg(`voice debug on (${location.pathname})`);
+  } catch {
+    /* storage unavailable: the log stays off */
+  }
+})();
