@@ -198,6 +198,48 @@ describe('Web Speech on a phone', () => {
     expect(t.voice.isRecording).toBe(true);
   });
 
+  // The shape from the phone that reported it: each update is a NEW entry in `results`, holding the whole
+  // sentence so far, every one flagged final (so the list grows: 1 entry, 2 entries, 3 entries...).
+  it('a chain of growing "final" entries is one sentence, inserted once', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    const sentence = [
+      'alright',
+      "alright let's",
+      "alright let's try",
+      "alright let's try this",
+      "alright let's try this again",
+    ];
+    const entries: string[] = [];
+    for (const text of sentence) {
+      entries.push(text);
+      FakeRecognition.last!.onresult!(speech([...entries]));
+    }
+    const pieces = t.voice._insertText.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(pieces.join('').trim()).toBe("alright let's try this again");
+    expect(pieces).toEqual(['alright', " let's", ' try', ' this', ' again']);
+    expect(t.voice._accumulatedFinal).toBe("alright let's try this again");
+  });
+
+  it('genuinely separate phrases in one session are still both kept', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(speech(['hello there']));
+    FakeRecognition.last!.onresult!(speech(['hello there', ' how are you']));
+    expect(t.voice._accumulatedFinal).toBe('hello there how are you');
+    const pieces = t.voice._insertText.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(pieces.join('')).toBe('hello there how are you');
+  });
+
+  it('an interim entry that extends the final text is not shown twice in the preview', () => {
+    const t = boot(ANDROID_EDGE);
+    const shown: string[] = [];
+    t.voice._showPreview = (text: string) => shown.push(text);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(speech(["alright let's"], "alright let's try"));
+    expect(shown.at(-1)).toBe("alright let's try");
+  });
+
   it('words the engine revises that are already in the prompt are not inserted twice', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
