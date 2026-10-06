@@ -835,7 +835,8 @@ const VoiceInput = {
     this.isRecording = true;
     this._activeProvider = 'webspeech';
     this._accumulatedFinal = '';
-    this._insertedLength = 0;
+    this._insertedText = '';
+    this._baseText = '';
     this._webSpeechRestarts = 0;
     this._lastResultAt = 0;
     this._lastTranscript = '';
@@ -914,30 +915,35 @@ const VoiceInput = {
     if (!this.isRecording) return;
     this._hasReceivedResult = true;
     this._resetSilenceTimeout();
+    // The whole transcript of the final results so far in THIS recogniser session, plus whatever is
+    // still interim. Not just the entries from `resultIndex`: Chrome on Android re-sends the running
+    // sentence as one "final" result on every update ("testing", "testing can", "testing can you"...),
+    // so adding each event's final text would put the sentence into the prompt again and again. As the
+    // session's whole transcript it is simply the latest version of the same text, and
+    // _flushToPrompt inserts only what has not been inserted yet.
+    let sessionFinal = '';
     let interim = '';
-    let finalText = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
+    for (let i = 0; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
-        finalText += transcript;
-      } else {
+        sessionFinal += sessionFinal && !/\s$/.test(sessionFinal) && !/^\s/.test(transcript) ? ` ${transcript}` : transcript;
+      } else if (i >= event.resultIndex) {
         interim += transcript;
       }
     }
 
-    if (finalText) {
+    if (sessionFinal) {
       this._lastResultAt = Date.now();
+      // A restarted recogniser begins its transcript afresh, so this session's text is joined to what
+      // earlier sessions of the same dictation produced (_baseText) with exactly one space.
+      const base = this._baseText || '';
+      this._accumulatedFinal = base && !/\s$/.test(base) && !/^\s/.test(sessionFinal) ? `${base} ${sessionFinal}` : base + sessionFinal;
       // A phrase is finished: put it in the prompt and KEEP LISTENING. This used to stop the session
       // at the first final result, which is a pause in the speech and nothing more, so a person who
       // said a word, drew breath and carried on found the microphone already off (about two seconds in).
       // The session now ends on a tap, or after WEBSPEECH_PAUSE_MS of quiet (the timer above).
-      // A restarted recogniser starts its transcript afresh, usually without the leading space an
-      // in-session continuation carries, so join phrases with exactly one.
-      const joined = this._accumulatedFinal;
-      this._accumulatedFinal =
-        joined && !/\s$/.test(joined) && !/^\s/.test(finalText) ? `${joined} ${finalText}` : joined + finalText;
       this._flushToPrompt();
-      this._showPreview('Listening...');
+      this._showPreview(interim ? this._accumulatedFinal + interim : 'Listening...');
     } else if (interim) {
       const display = this._accumulatedFinal + interim;
       this._showPreview(display);
@@ -1023,6 +1029,8 @@ const VoiceInput = {
       Date.now() - this._lastResultAt < this.WEBSPEECH_PAUSE_MS
     ) {
       this._webSpeechRestarts += 1;
+      // The next session's transcript starts empty: remember everything dictated so far.
+      this._baseText = this._accumulatedFinal || '';
       try {
         this.recognition.start();
         return;
@@ -1243,20 +1251,26 @@ const VoiceInput = {
   /**
    * Put the dictated text that is not in the prompt yet there. Direct mode inserts only the new
    * part (a space joins it to what is already there); compose mode replaces the editor's text with
-   * everything dictated so far, so nothing is ever inserted twice however a session ends.
+   * everything dictated so far. Either way nothing is inserted twice, however a session ends and
+   * however often the engine re-sends the sentence it has so far. If the engine REVISES words that
+   * are already in the prompt (direct mode can only append), the text from the first difference on is
+   * appended rather than the whole sentence again.
    */
   _flushToPrompt() {
     const all = this._accumulatedFinal || '';
-    const done = this._insertedLength || 0;
-    if (all.length <= done) return;
+    const done = this._insertedText || '';
+    if (all === done) return;
     const mode = this._getDeepgramConfig().insertMode || 'direct';
     if (mode === 'compose') {
       this._insertText(all);
     } else {
-      const fresh = all.slice(done);
-      this._insertText(done > 0 ? ` ${fresh.trim()}` : fresh, { keepLeadingSpace: done > 0 });
+      let common = 0;
+      const max = Math.min(all.length, done.length);
+      while (common < max && all[common] === done[common]) common += 1;
+      const fresh = all.slice(common).trim();
+      if (fresh) this._insertText(done ? ` ${fresh}` : fresh, { keepLeadingSpace: !!done });
     }
-    this._insertedLength = all.length;
+    this._insertedText = all;
   },
 
   _iosStabilityCheck(transcript) {

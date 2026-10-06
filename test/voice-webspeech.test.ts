@@ -147,39 +147,75 @@ describe('Web Speech on a phone', () => {
     expect(t.voice.isRecording).toBe(false);
   });
 
-  const phrase = (text: string, isFinal: boolean, index = 0) => ({
-    resultIndex: index,
-    results: Object.assign(
-      Array.from({ length: index + 1 }, (_, n) =>
-        n === index
-          ? Object.assign([{ transcript: text }], { isFinal })
-          : Object.assign([{ transcript: '' }], { isFinal: true })
-      ),
-      {}
-    ),
+  /**
+   * A `result` event as the engine delivers it: every final phrase of the session so far, then at most one
+   * interim one. (`resultIndex` is the first entry that changed.)
+   */
+  const speech = (finals: string[], interim = '') => ({
+    resultIndex: Math.max(0, finals.length - 1),
+    results: [
+      ...finals.map((transcript) => Object.assign([{ transcript }], { isFinal: true })),
+      ...(interim ? [Object.assign([{ transcript: interim }], { isFinal: false })] : []),
+    ],
   });
 
   it('keeps listening after a finished phrase, and puts each phrase in the prompt once', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
-    FakeRecognition.last!.onresult!(phrase('testing', true, 0)); // what Android hands back after a pause
+    FakeRecognition.last!.onresult!(speech(['testing'])); // what Android hands back after a pause
     expect(t.voice.isRecording).toBe(true); // used to stop here, about two seconds in
     expect(t.voice._insertText).toHaveBeenCalledTimes(1);
     expect(t.voice._insertText).toHaveBeenLastCalledWith('testing', { keepLeadingSpace: false });
 
     t.advance(1_500);
-    FakeRecognition.last!.onresult!(phrase(' this keeps going', true, 1));
+    FakeRecognition.last!.onresult!(speech(['testing', ' this keeps going']));
     expect(t.voice.isRecording).toBe(true);
     expect(t.voice._insertText).toHaveBeenCalledTimes(2);
     expect(t.voice._insertText).toHaveBeenLastCalledWith(' this keeps going', { keepLeadingSpace: true });
   });
 
+  // What Chrome on Android really sends: the running sentence as ONE "final" result, repeated and extended
+  // on every update. Adding each event's final text put "testing", "testing can", "testing can you"... into
+  // the prompt one after another (reported from a phone).
+  it('a sentence re-sent in growing "final" results is inserted once, not once per update', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    const updates = [
+      'testing',
+      'testing can',
+      'testing can',
+      'testing can you',
+      'testing can you',
+      'testing can you go',
+      'testing can you go longer',
+      'testing can you go longer than two seconds now',
+      'testing can you go longer than two seconds now',
+    ];
+    for (const text of updates) FakeRecognition.last!.onresult!(speech([text]));
+    const pieces = t.voice._insertText.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(pieces.join('').trim()).toBe('testing can you go longer than two seconds now');
+    expect(t.voice._accumulatedFinal).toBe('testing can you go longer than two seconds now');
+    expect(t.voice.isRecording).toBe(true);
+  });
+
+  it('words the engine revises that are already in the prompt are not inserted twice', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(speech(['recognise speech']));
+    FakeRecognition.last!.onresult!(speech(['wreck a nice beach']));
+    const pieces = t.voice._insertText.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(pieces[0]).toBe('recognise speech');
+    // Direct mode can only append: from the first difference on, once.
+    expect(pieces).toHaveLength(2);
+    expect(pieces[1]).toMatch(/^ ?wreck a nice beach$/);
+  });
+
   it('ends 4 s after the LAST phrase, without inserting anything a second time', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
-    FakeRecognition.last!.onresult!(phrase('one', true, 0));
+    FakeRecognition.last!.onresult!(speech(['one']));
     t.advance(2_000);
-    FakeRecognition.last!.onresult!(phrase(' two', true, 1)); // restarts the quiet timer
+    FakeRecognition.last!.onresult!(speech(['one', ' two'])); // restarts the quiet timer
     t.advance(3_900);
     expect(t.voice.isRecording).toBe(true);
     t.advance(200);
@@ -194,7 +230,7 @@ describe('Web Speech on a phone', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
     const rec = FakeRecognition.last!;
-    rec.onresult!(phrase('testing', true, 0));
+    rec.onresult!(speech(['testing']));
     t.advance(300);
     rec.onend!(); // Android: the engine is done after one utterance
     expect(rec.started).toBe(2); // listening again
@@ -202,7 +238,7 @@ describe('Web Speech on a phone', () => {
     expect(t.toasts).toEqual([]);
 
     t.advance(1_000);
-    rec.onresult!(phrase('this is the second part', true, 0)); // a fresh transcript, index 0 again
+    rec.onresult!(speech(['this is the second part'])); // a fresh transcript, index 0 again
     expect(t.voice._insertText).toHaveBeenCalledTimes(2);
     expect(t.voice._insertText).toHaveBeenLastCalledWith(' this is the second part', { keepLeadingSpace: true });
     expect(t.voice._accumulatedFinal).toBe('testing this is the second part'); // one space between phrases
@@ -211,7 +247,7 @@ describe('Web Speech on a phone', () => {
   it('does not re-arm once the quiet window has run out, or after the person stopped it', () => {
     const late = boot(ANDROID_EDGE);
     late.voice.start();
-    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onresult!(speech(['hello']));
     late.advance(3_900); // still inside the window...
     late.voice._lastResultAt -= 5_000; // ...but pretend the last phrase was long ago
     FakeRecognition.last!.onend!();
@@ -220,7 +256,7 @@ describe('Web Speech on a phone', () => {
 
     const tapped = boot(ANDROID_EDGE);
     tapped.voice.start();
-    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onresult!(speech(['hello']));
     tapped.voice.stop();
     FakeRecognition.last!.onend!();
     expect(FakeRecognition.last!.started).toBe(1);
@@ -230,7 +266,7 @@ describe('Web Speech on a phone', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
     const rec = FakeRecognition.last!;
-    rec.onresult!(phrase('hello', true, 0));
+    rec.onresult!(speech(['hello']));
     for (let i = 0; i < 100 && t.voice.isRecording; i += 1) {
       t.voice._lastResultAt = Date.now(); // each cycle counts as just having heard speech
       rec.onend!();
@@ -242,7 +278,7 @@ describe('Web Speech on a phone', () => {
   it('a quiet spell ending the recogniser after dictation is a normal end: text stays, no complaint', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
-    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onresult!(speech(['hello']));
     FakeRecognition.last!.onerror!({ error: 'no-speech' });
     expect(t.voice.isRecording).toBe(false);
     expect(t.toasts).toEqual([]);
@@ -252,7 +288,7 @@ describe('Web Speech on a phone', () => {
   it('the engine ending by itself after phrases inserts nothing new and does not complain', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
-    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
+    FakeRecognition.last!.onresult!(speech(['hello']));
     t.advance(6_000);
     FakeRecognition.last!.onend!();
     expect(t.voice._insertText).toHaveBeenCalledTimes(1);
@@ -263,15 +299,15 @@ describe('Web Speech on a phone', () => {
     const t = boot(ANDROID_EDGE);
     t.voice._getDeepgramConfig = () => ({ insertMode: 'compose' });
     t.voice.start();
-    FakeRecognition.last!.onresult!(phrase('hello', true, 0));
-    FakeRecognition.last!.onresult!(phrase(' world', true, 1));
+    FakeRecognition.last!.onresult!(speech(['hello']));
+    FakeRecognition.last!.onresult!(speech(['hello', ' world']));
     expect(t.voice._insertText.mock.calls.map((c: unknown[]) => c[0])).toEqual(['hello', 'hello world']);
   });
 
   it('a pause in an interim phrase does NOT end the session on Android, but still does on iOS (no finals there)', () => {
     const android = boot(ANDROID_EDGE);
     android.voice.start();
-    FakeRecognition.last!.onresult!(phrase('testing', false, 0));
+    FakeRecognition.last!.onresult!(speech([], 'testing'));
     android.advance(1_000);
     expect(android.voice.isRecording).toBe(true); // the 750 ms "stopped changing" rule is iOS-only
 
@@ -279,7 +315,7 @@ describe('Web Speech on a phone', () => {
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
     );
     ios.voice.start();
-    FakeRecognition.last!.onresult!(phrase('testing', false, 0));
+    FakeRecognition.last!.onresult!(speech([], 'testing'));
     ios.advance(800);
     expect(ios.voice.isRecording).toBe(false);
     expect(ios.voice._insertText).toHaveBeenCalledWith('testing', { keepLeadingSpace: false });
