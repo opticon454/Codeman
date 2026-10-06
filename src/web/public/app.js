@@ -1252,6 +1252,14 @@ class CodemanApp {
       };
       addKeyboardTapFix(document.querySelector('.toolbar'));
       addKeyboardTapFix(document.querySelector('.welcome-overlay'));
+      // The mic buttons must never take focus from the terminal, whether or not the keyboard was
+      // detected as open (the handler above only acts when it was). A tap focuses the button on its
+      // `mousedown`, which blurs the terminal: the Android keyboard drops, the layout shifts under the
+      // finger and the click is lost, so it took two taps to start, and two to stop. Cancelling that
+      // default keeps focus where it was; the click still follows and is handled once, as usual.
+      for (const id of ['voiceInputBtnMobile', 'voiceInputBtn']) {
+        document.getElementById(id)?.addEventListener('mousedown', (e) => e.preventDefault());
+      }
     }
     // System stats polling deferred until sessions exist (started in handleInit/session:created)
     // Setup online/offline detection
