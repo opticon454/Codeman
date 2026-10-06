@@ -86,6 +86,7 @@ function boot(userAgent: string, url = 'http://localhost/') {
   return {
     voice,
     toasts,
+    window: win,
     getUserMedia,
     /** Advance the manual clock, firing due timers in order. */
     advance(ms: number) {
@@ -472,6 +473,19 @@ describe('Web Speech on a phone', () => {
       expect(log).toMatch(/re-arming recogniser \(#1\)/);
       expect(log).toMatch(/toggle\(\): isRecording=true -> stop/);
       expect(log).toMatch(/stop\(\): isRecording=true caller=/);
+    });
+
+    it('also records what the page sees: resizes, visibility and focus changes', () => {
+      const t = boot(ANDROID_EDGE, 'http://localhost/?voicedebug=1');
+      expect(t.voice._dbgLines.some((l: string) => /start state: inner=\d+x\d+/.test(l))).toBe(true);
+      const g = t.window as any;
+      g.dispatchEvent(new g.Event('resize'));
+      g.document.dispatchEvent(new g.Event('visibilitychange'));
+      g.dispatchEvent(new g.Event('blur'));
+      const log = t.voice._dbgLines.join('\n');
+      expect(log).toMatch(/window resize inner=/);
+      expect(log).toMatch(/visibility=/);
+      expect(log).toMatch(/window blur/);
     });
 
     it('?voicedebug=0 switches it off again', () => {
