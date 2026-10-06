@@ -67,6 +67,22 @@ describe('mic button on a phone while the keyboard is up', () => {
     expect(after.typing, `focus moved to ${after.active}`).toBe(true);
   });
 
+  // The path taken when the keyboard was NOT detected as open (so the touchstart handler stands aside) and
+  // the terminal has lost, or never had, DOM focus while the soft keyboard is still showing: the browser's
+  // own tap, mousedown first. It used to focus the button, drop the keyboard and lose the click.
+  it('the plain mouse path (what a tap becomes when the touch handler stands aside) keeps focus too', async () => {
+    await page.evaluate(() => {
+      (window as any).__toggles = 0;
+      (document.querySelector('.xterm-helper-textarea') as HTMLElement).focus();
+    });
+    const box = (await page.locator('#voiceInputBtnMobile').boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(150);
+    const after = await state();
+    expect(after.toggles).toBe(1);
+    expect(after.typing, `focus moved to ${after.active}`).toBe(true);
+  });
+
   it('with nothing focused a tap is an ordinary tap: it toggles once and does not grab focus', async () => {
     await page.evaluate(() => {
       (document.activeElement as HTMLElement | null)?.blur();
