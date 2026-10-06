@@ -133,15 +133,16 @@ describe('Web Speech on a phone', () => {
     expect(t.toasts).toEqual([["Didn't hear anything. Tap the mic and start talking.", 'info']]); // and says so
   });
 
-  it('starts the grace period when the engine really begins listening, then 4 s of quiet after speech starts', () => {
+  it('starts the grace period when the engine really begins listening, then the quiet window once speech starts', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
     t.advance(2_000);
     FakeRecognition.last!.onaudiostart!(); // engine up at t=2 s: a fresh 8 s from here
     t.advance(7_900);
     expect(t.voice.isRecording).toBe(true);
-    FakeRecognition.last!.onspeechstart!(); // the person speaks: the normal short pause applies
-    t.advance(3_900);
+    FakeRecognition.last!.onspeechstart!(); // the person speaks: the quiet window applies
+    const quiet = t.voice.WEBSPEECH_PAUSE_MS;
+    t.advance(quiet - 100);
     expect(t.voice.isRecording).toBe(true);
     t.advance(200);
     expect(t.voice.isRecording).toBe(false);
@@ -252,18 +253,35 @@ describe('Web Speech on a phone', () => {
     expect(pieces[1]).toMatch(/^ ?wreck a nice beach$/);
   });
 
-  it('ends 4 s after the LAST phrase, without inserting anything a second time', () => {
+  it('only a long quiet spell after the LAST phrase ends it, says so, and inserts nothing a second time', () => {
     const t = boot(ANDROID_EDGE);
+    const quiet = t.voice.WEBSPEECH_PAUSE_MS;
+    expect(quiet).toBeGreaterThanOrEqual(15_000); // time to stop and think; tapping the mic is how it normally ends
     t.voice.start();
     FakeRecognition.last!.onresult!(speech(['one']));
     t.advance(2_000);
     FakeRecognition.last!.onresult!(speech(['one', ' two'])); // restarts the quiet timer
-    t.advance(3_900);
+    t.advance(quiet - 100);
     expect(t.voice.isRecording).toBe(true);
     t.advance(200);
     expect(t.voice.isRecording).toBe(false);
     expect(t.voice._insertText).toHaveBeenCalledTimes(2); // 'one' and ' two', not 'one two' again at the end
+    // Said out loud: otherwise the next tap, meant as "stop", would start a new recording unnoticed.
+    expect(t.toasts).toEqual([
+      [expect.stringMatching(/stopped after \d+ s of quiet. Tap the mic to dictate again/), 'info'],
+    ]);
+  });
+
+  it('a person tapping the mic while it is still listening stops it with no message', () => {
+    const t = boot(ANDROID_EDGE);
+    t.voice.start();
+    FakeRecognition.last!.onresult!(speech(['hello there']));
+    t.advance(5_000); // longer than the old 4 s window: still listening
+    expect(t.voice.isRecording).toBe(true);
+    t.voice.toggle(); // the tap that is meant to stop it
+    expect(t.voice.isRecording).toBe(false);
     expect(t.toasts).toEqual([]);
+    expect(FakeRecognition.last!.started).toBe(1); // and it did not start a new recording
   });
 
   // Chrome and Edge on Android ignore `continuous = true`: the recogniser ends at the first pause, however
@@ -291,7 +309,7 @@ describe('Web Speech on a phone', () => {
     late.voice.start();
     FakeRecognition.last!.onresult!(speech(['hello']));
     late.advance(3_900); // still inside the window...
-    late.voice._lastResultAt -= 5_000; // ...but pretend the last phrase was long ago
+    late.voice._lastResultAt -= late.voice.WEBSPEECH_PAUSE_MS + 1_000; // ...but pretend the last phrase was long ago
     FakeRecognition.last!.onend!();
     expect(FakeRecognition.last!.started).toBe(1);
     expect(late.voice.isRecording).toBe(false);
@@ -309,7 +327,7 @@ describe('Web Speech on a phone', () => {
     t.voice.start();
     const rec = FakeRecognition.last!;
     rec.onresult!(speech(['hello']));
-    for (let i = 0; i < 100 && t.voice.isRecording; i += 1) {
+    for (let i = 0; i < t.voice.WEBSPEECH_MAX_RESTARTS + 20 && t.voice.isRecording; i += 1) {
       t.voice._lastResultAt = Date.now(); // each cycle counts as just having heard speech
       rec.onend!();
     }
@@ -317,13 +335,20 @@ describe('Web Speech on a phone', () => {
     expect(t.voice.isRecording).toBe(false);
   });
 
-  it('a quiet spell ending the recogniser after dictation is a normal end: text stays, no complaint', () => {
+  it('a no-speech spell after dictation is not an error: it listens again until the quiet window is up', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
-    FakeRecognition.last!.onresult!(speech(['hello']));
-    FakeRecognition.last!.onerror!({ error: 'no-speech' });
-    expect(t.voice.isRecording).toBe(false);
+    const rec = FakeRecognition.last!;
+    rec.onresult!(speech(['hello']));
+    t.advance(6_000); // Android raises no-speech after a few quiet seconds, then ends
+    rec.onerror!({ error: 'no-speech' });
+    expect(t.voice.isRecording).toBe(true); // not stopped, no complaint
     expect(t.toasts).toEqual([]);
+    rec.onend!(); // the `end` that follows decides: still inside the window, so listen again
+    expect(rec.started).toBe(2);
+    expect(t.voice.isRecording).toBe(true);
+    t.advance(t.voice.WEBSPEECH_PAUSE_MS); // and only the long quiet ends it
+    expect(t.voice.isRecording).toBe(false);
     expect(t.voice._insertText).toHaveBeenCalledTimes(1);
   });
 
@@ -334,6 +359,7 @@ describe('Web Speech on a phone', () => {
     t.advance(6_000);
     FakeRecognition.last!.onend!();
     expect(t.voice._insertText).toHaveBeenCalledTimes(1);
+    expect(FakeRecognition.last!.started).toBe(2); // listening again
     expect(t.toasts).toEqual([]);
   });
 
@@ -410,14 +436,14 @@ describe('Web Speech on a phone', () => {
     expect(t.toasts).toEqual([]);
   });
 
-  it('an end after a result inserts the text and does not complain', () => {
+  it('an end after dictation, past the quiet window, inserts what is left and says it stopped', () => {
     const t = boot(ANDROID_EDGE);
     t.voice.start();
     t.voice._hasReceivedResult = true;
-    t.voice._accumulatedFinal = 'hello world';
+    t.voice._accumulatedFinal = 'hello world'; // (_lastResultAt is 0: the last phrase was long ago)
     t.advance(2_000);
     FakeRecognition.last!.onend!();
     expect(t.voice._insertText).toHaveBeenCalledWith('hello world', { keepLeadingSpace: false });
-    expect(t.toasts).toEqual([]);
+    expect(t.toasts).toEqual([[expect.stringMatching(/Tap the mic to dictate again/), 'info']]);
   });
 });

@@ -539,10 +539,15 @@ const ClaudeVoiceProvider = {
 const VoiceInput = {
   /** How long the speech recogniser may stay silent after it starts listening before the session ends. */
   WEBSPEECH_START_GRACE_MS: 8000,
-  /** How long it stays listening after the last phrase before it ends the session by itself. */
-  WEBSPEECH_PAUSE_MS: 4000,
+  /**
+   * How long it stays listening after the last phrase before it ends the session by itself. Dictation
+   * is ended by tapping the mic; this is only the safety net for a mic left on, so it is long enough to
+   * stop and think. (At 4 s the session had usually ended silently before the tap meant to stop it, and
+   * that tap started a NEW recording, which then waited and complained it heard nothing.)
+   */
+  WEBSPEECH_PAUSE_MS: 20000,
   /** Most times one session re-arms a recogniser that ended by itself (see _onWebSpeechEnd). */
-  WEBSPEECH_MAX_RESTARTS: 40,
+  WEBSPEECH_MAX_RESTARTS: 200,
   recognition: null,
   isRecording: false,
   supported: false,
@@ -960,11 +965,9 @@ const VoiceInput = {
     if (this._retryCount > 0 && (event.error === 'aborted' || event.error === 'no-speech')) return;
 
     const wasRecording = this.isRecording;
-    // Having dictated something, a quiet spell ending the recogniser is the normal end: put the text in
-    // the prompt and stop without a complaint.
+    // Having dictated something, a quiet spell ending the recogniser is not an error: `end` follows this
+    // event and decides (listen again while the quiet window is open, otherwise finish quietly).
     if (wasRecording && this._hasReceivedResult && (event.error === 'no-speech' || event.error === 'aborted')) {
-      this._flushToPrompt();
-      this.stop();
       return;
     }
     this.stop();
@@ -1043,6 +1046,7 @@ const VoiceInput = {
     // Genuine end — finalize any accumulated text
     if (this._accumulatedFinal) {
       this._flushToPrompt();
+      if (this._hasReceivedResult) app.showToast(this._quietStopMessage(), 'info');
     } else if (!this._hasReceivedResult) {
       // The recogniser stopped itself having heard nothing: say so rather than just un-pressing the button.
       app.showToast(
@@ -1237,6 +1241,7 @@ const VoiceInput = {
         // Put anything not yet in the prompt there before stopping
         if (this._accumulatedFinal) {
           this._flushToPrompt();
+          app.showToast(this._quietStopMessage(), 'info');
         } else if (!this._hasReceivedResult) {
           app.showToast("Didn't hear anything. Tap the mic and start talking.", 'info');
         }
@@ -1261,6 +1266,11 @@ const VoiceInput = {
     let out = '';
     for (const part of parts) out += out && !/\s$/.test(out) && !/^\s/.test(part) ? ` ${part}` : part;
     return out;
+  },
+
+  /** Said when dictation ended by itself after a quiet spell, so a later tap on the mic is not mistaken for 'stop'. */
+  _quietStopMessage() {
+    return `Voice input stopped after ${Math.round(this.WEBSPEECH_PAUSE_MS / 1000)} s of quiet. Tap the mic to dictate again.`;
   },
 
   _isIOS() {
