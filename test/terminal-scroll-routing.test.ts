@@ -212,7 +212,7 @@ describe('PageUp/PageDown fallback for a hollow local buffer (issue #205 round 2
     // page-key behaviour is unverified — docs/scrollback-fix-plan.md).
     app.sessions = new Map([['sess-1', { mode: 'shell' }]]);
     expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(false);
-    app.sessions = new Map([['sess-1', { mode: 'codex' }]]);
+    app.sessions = new Map([['sess-1', { mode: 'gemini' }]]);
     expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(false);
     app.sessions = new Map([['sess-1', { mode: 'antigravity' }]]);
     expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(false);
@@ -221,6 +221,22 @@ describe('PageUp/PageDown fallback for a hollow local buffer (issue #205 round 2
     app.sessions = new Map([['sess-1', { mode: 'claude' }]]);
     app.terminal.buffer.active.type = 'alternate';
     expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(false);
+  });
+
+  it('pages a Codex pane whose local buffer is hollow (codex-cli 0.160 alt-screen: wheel was dead)', () => {
+    const { app, sent } = hollowApp();
+    app.sessions = new Map([['sess-1', { mode: 'codex' }]]);
+
+    expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(true);
+    app._flushWheelSgrQueue();
+    expect(sent).toEqual([{ id: 'sess-1', data: '\x1b[5~' }]);
+
+    // An older inline Codex that grew real scrollback still scrolls locally.
+    app.terminal.buffer.active.baseY = 200;
+    expect(app._maybePageCliTranscript({ shiftKey: false }, -18)).toBe(false);
+    // Shift still means local scrollback.
+    app.terminal.buffer.active.baseY = 0;
+    expect(app._maybePageCliTranscript({ shiftKey: true }, -18)).toBe(false);
   });
 
   it('rescues the local-scrollback opt-out footgun instead of silently dying', () => {
@@ -304,7 +320,7 @@ describe('the paging gates asked for another pane (a TerminalTile)', () => {
     tileBuffer.type = 'alternate';
     expect(app._localScrollbackIsHollow({ sessionId: 'tile-1', terminal: tileTerminal, localRows: 0 })).toBe(false);
     tileBuffer.type = 'normal';
-    app.sessions.set('tile-1', { mode: 'codex' });
+    app.sessions.set('tile-1', { mode: 'gemini' });
     expect(app._localScrollbackIsHollow({ sessionId: 'tile-1', terminal: tileTerminal, localRows: 0 })).toBe(false);
   });
 

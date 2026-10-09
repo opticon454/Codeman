@@ -5685,8 +5685,13 @@ Object.assign(CodemanApp.prototype, {
    *    byte-identical — so paging is the only gesture that reaches it. Without
    *    this the wheel was silently dead in every opencode tab.
    *
+   *  - `codex` (codex-cli 0.160+), which also runs on the alternate screen (tmux
+   *    `alternate_on=1`, `history_size=0`) and pages its transcript with PageUp/
+   *    PageDown (confirmed by the reporter: wheel dead, page keys work). An older
+   *    inline Codex has `baseY > 0`, so it keeps scrolling locally.
+   *
    * Every other mode is deliberately absent: shell/pi own real terminal
-   * scrollback, and codex/gemini/antigravity/grok/deepseek/omp page-key behaviour
+   * scrollback, and gemini/antigravity/grok/deepseek/omp page-key behaviour
    * is unverified (docs/scrollback-fix-plan.md).
    *
    * `target` ({ terminal, sessionId, localRows }) asks for a TerminalTile, which
@@ -5697,7 +5702,7 @@ Object.assign(CodemanApp.prototype, {
    */
   _localScrollbackIsHollow(target = {}) {
     const mode = this.sessions?.get(target.sessionId || this.activeSessionId)?.mode || 'claude';
-    if (mode !== 'claude' && mode !== 'opencode') return false;
+    if (mode !== 'claude' && mode !== 'opencode' && mode !== 'codex') return false;
     const buf = (target.terminal || this.terminal)?.buffer?.active;
     if (!buf || buf.type === 'alternate') return false;
     const rows = Number.isFinite(target.localRows) ? target.localRows : buf.baseY;
