@@ -1,0 +1,13 @@
+{
+  "version": "1.41.0",
+  "highlights": [
+    "Tile Animations (#571)",
+    "Tiles open the sessions you care about, and keep your layout",
+    "The wheel scrolls Claude inside a tile (#577)",
+    "`codeman agent`: session verbs for every CLI (#557)",
+    "Settings: Apply (#565)",
+    "MCP server sync reaches GitHub Copilot CLI (#581)",
+    "Notifications stay up longer if you want (#564)",
+    "CLI logos on tabs can be switched off (#569)"
+  ]
+}
