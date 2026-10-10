@@ -1259,8 +1259,10 @@ const DEEPSEEK: CliEntry = {
     launcherTargetParam: 'profile',
     install: {
       command: {
-        linux: 'npm install -g @deepseek-ai/dsh',
-        darwin: 'npm install -g @deepseek-ai/dsh',
+        // pnpm rides along: `dsh plugin` spawns a literal `pnpm` with no npm fallback, so the
+        // terminal profile this CLI needs before it can run cannot be installed without it (#352).
+        linux: 'npm install -g @deepseek-ai/dsh pnpm',
+        darwin: 'npm install -g @deepseek-ai/dsh pnpm',
       },
       npmPackage: '@deepseek-ai/dsh',
       docsUrl: 'https://github.com/deepseek-ai/deepseek-harness',
