@@ -4704,6 +4704,14 @@ Object.assign(CodemanApp.prototype, {
       this.showToast?.('Shortcut must include Ctrl, Cmd, or Alt', 'error');
       return;
     }
+    // Refuse a chord something else already owns: the registry dispatches the first match,
+    // so a duplicate would silently take over (or lose to) the other action.
+    const taken = this.findShortcutConflict(e, shortcutId);
+    if (taken) {
+      this.renderShortcutSettingsList();
+      this.showToast?.(`${this.describeShortcutEvent(e)} is already used by ${taken}`, 'error');
+      return;
+    }
     const modifiers = [];
     if (e.ctrlKey) modifiers.push('ctrl');
     if (e.metaKey) modifiers.push('meta');
@@ -4718,6 +4726,30 @@ Object.assign(CodemanApp.prototype, {
     settings.shortcutOverrides = shortcutOverrides;
     this.saveAppSettingsToStorage(settings);
     this.renderShortcutSettingsList();
+  },
+
+  /** Label of the action that already owns the chord in `e`, or '' when it is free. */
+  findShortcutConflict(e, shortcutId) {
+    // Alt+1-9 switch tabs by index; they are fixed, not in the registry.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code || '')) {
+      return 'Switch to Tab N';
+    }
+    if (typeof this.getShortcutRegistry !== 'function' || typeof this.matchesShortcutEvent !== 'function') return '';
+    const other = this.getShortcutRegistry().find(
+      (shortcut) =>
+        shortcut.id !== shortcutId && !shortcut.disabled && Array.isArray(shortcut.bindings) && this.matchesShortcutEvent(e, shortcut)
+    );
+    return other ? other.label : '';
+  },
+
+  describeShortcutEvent(e) {
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.metaKey) parts.push('Meta');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.altKey) parts.push('Alt');
+    parts.push(e.key && e.key.length === 1 ? e.key.toUpperCase() : e.key || e.code);
+    return parts.join('+');
   },
 
   resetShortcutOverride(shortcutId) {

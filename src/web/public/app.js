@@ -637,11 +637,20 @@ const DEFAULT_SHORTCUTS = [
     bindings: [],
     action: 'removeTile',
   },
+  // Physical key codes, so macOS Option layouts that print "“" for Option+[ still match.
   {
-    id: 'previous-next-session',
+    id: 'previous-session',
     group: 'Session',
-    label: 'Previous / Next Session',
-    displayBindings: ['Alt/Option+[', 'Alt/Option+]'],
+    label: 'Previous Session',
+    bindings: [{ modifiers: ['alt'], code: 'BracketLeft' }],
+    action: 'previousSession',
+  },
+  {
+    id: 'next-session-alt',
+    group: 'Session',
+    label: 'Next Session (alternate)',
+    bindings: [{ modifiers: ['alt'], code: 'BracketRight' }],
+    action: 'nextSession',
   },
   {
     id: 'switch-tab-n',
@@ -1378,19 +1387,7 @@ class CodemanApp {
     // getShortcutRegistry()). The command palette chord is deliberately NOT in
     // this map — shouldOpenCommandPaletteFromShortcut() dispatches it above with
     // focus-target awareness (it must fire from the terminal but not from inputs).
-    const SHORTCUT_ACTIONS = {
-      showShortcutOverlay: () => this.showShortcutOverlay(),
-      killActiveSession: () => this.killActiveSession(),
-      nextSession: () => this.nextSession(),
-      clearTerminal: () => this.clearTerminal(),
-      restoreTerminalSize: () => this.restoreTerminalSize(),
-      increaseFontSize: () => this.increaseFontSize(),
-      decreaseFontSize: () => this.decreaseFontSize(),
-      toggleVoiceInput: () => VoiceInput.toggle(),
-      moveActiveTabLeft: () => this.moveActiveTabLeft(),
-      moveActiveTabRight: () => this.moveActiveTabRight(),
-      toggleSessionSidebar: () => this.toggleSessionSidebar(),
-    };
+    const SHORTCUT_ACTIONS = this._shortcutActions();
 
     // Use capture to handle before terminal
     document.addEventListener('keydown', (e) => {
@@ -1453,7 +1450,7 @@ class CodemanApp {
       // Option/Alt session navigation uses physical key CODES, not e.key, so macOS
       // keyboard layouts that emit special characters under Option (Option+1 -> ¡,
       // Option+[ -> "“") still switch sessions. e.code is the physical key regardless
-      // of layout. Option+1-9 = switch by index; Option+[ / Option+] = prev / next.
+      // of layout. Option+1-9 = switch by index. Option+[ / ] (prev / next) live in the shortcut registry, so they can be rebound.
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
         const code = e.code || '';
         const digitMatch = code.match(/^Digit([1-9])$/);
@@ -1477,16 +1474,6 @@ class CodemanApp {
               this.openWebview(webId);
             }
           }
-          return;
-        }
-        if (e.code === 'BracketLeft') {
-          e.preventDefault();
-          this.prevSession();
-          return;
-        }
-        if (e.code === 'BracketRight') {
-          e.preventDefault();
-          this.nextSession();
           return;
         }
       }
@@ -10203,6 +10190,47 @@ class CodemanApp {
   }
 
   // ─── Shortcut Registry ───────────────────────────────────────────────────────
+  /**
+   * Action name -> handler for the shortcut registry entries the document keydown
+   * handler dispatches generically (DEFAULT_SHORTCUTS + the user's rebinds). Entries
+   * absent here (copy selection, the palette, the tile chords) have their own dispatch.
+   */
+  _shortcutActions() {
+  return {
+    showShortcutOverlay: () => this.showShortcutOverlay(),
+    killActiveSession: () => this.killActiveSession(),
+    nextSession: () => this.nextSession(),
+    previousSession: () => this.prevSession(),
+    clearTerminal: () => this.clearTerminal(),
+    restoreTerminalSize: () => this.restoreTerminalSize(),
+    increaseFontSize: () => this.increaseFontSize(),
+    decreaseFontSize: () => this.decreaseFontSize(),
+    toggleVoiceInput: () => VoiceInput.toggle(),
+    moveActiveTabLeft: () => this.moveActiveTabLeft(),
+    moveActiveTabRight: () => this.moveActiveTabRight(),
+    toggleSessionSidebar: () => this.toggleSessionSidebar(),
+  };
+  }
+
+  /**
+   * True when `e` is a chord the USER rebound to a generically dispatched action.
+   * The document handler has already run the action, but its preventDefault() does not
+   * stop xterm, so without this gate a rebind to e.g. Alt+J would also type ESC j into the
+   * session. Defaults are not covered on purpose: several (Ctrl+L) rely on reaching the PTY.
+   */
+  isUserBoundShortcutEvent(e) {
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) return false;
+    const overrides = this.loadAppSettingsFromStorage().shortcutOverrides || {};
+    const actions = this._shortcutActions();
+    return this.getShortcutRegistry().some(
+      (shortcut) =>
+        !shortcut.disabled &&
+        Array.isArray(overrides[shortcut.id]?.bindings) &&
+        Object.hasOwn(actions, shortcut.action) &&
+        this.matchesShortcutEvent(e, shortcut)
+    );
+  }
+
   // Returns the merged shortcut list: DEFAULT_SHORTCUTS with any per-shortcut
   // overrides from settings.shortcutOverrides applied on top.
 

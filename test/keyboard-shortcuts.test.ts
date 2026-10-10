@@ -14,10 +14,11 @@ describe('keyboard shortcuts', () => {
   });
 
   it('provides Option+bracket shortcuts for previous and next session', () => {
-    expect(appSource).toContain("e.code === 'BracketLeft'");
-    expect(appSource).toContain("e.code === 'BracketRight'");
-    expect(appSource).toContain('this.prevSession()');
-    expect(appSource).toContain('this.nextSession()');
+    // Registry entries (so they can be rebound), matched by physical key code.
+    expect(appSource).toMatch(/id: 'previous-session'[\s\S]*?code: 'BracketLeft'[\s\S]*?action: 'previousSession'/);
+    expect(appSource).toMatch(/id: 'next-session-alt'[\s\S]*?code: 'BracketRight'[\s\S]*?action: 'nextSession'/);
+    expect(appSource).toContain('previousSession: () => this.prevSession()');
+    expect(appSource).toContain('nextSession: () => this.nextSession()');
   });
 
   it('suppresses xterm PTY injection for the same physical Alt nav codes (no ESC leak)', () => {
@@ -53,7 +54,7 @@ describe('keyboard shortcuts', () => {
     // getShortcutRegistry() + matchesShortcutEvent() so overrides and per-shortcut
     // disables (App Settings → Shortcuts) actually take effect.
     expect(appSource).not.toContain('const SHORTCUTS = [');
-    expect(appSource).toContain('const SHORTCUT_ACTIONS = {');
+    expect(appSource).toContain('const SHORTCUT_ACTIONS = this._shortcutActions();');
     expect(appSource).toContain('for (const shortcut of this.getShortcutRegistry())');
     expect(appSource).toContain('if (this.matchesShortcutEvent(e, shortcut))');
     expect(appSource).toContain('if (shortcut.disabled || !shortcut.action) continue;');
@@ -83,5 +84,15 @@ describe('keyboard shortcuts', () => {
     expect(helpHtml).toContain('<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>');
     expect(readme).toContain('`Ctrl/Cmd+C`');
     expect(readme).toContain('`Ctrl+Shift+C`');
+  });
+
+  it('keeps a user-rebound chord out of the PTY and refuses duplicate bindings', () => {
+    const tile = readFileSync('src/web/public/terminal-tile.js', 'utf8');
+    const settings = readFileSync('src/web/public/settings-ui.js', 'utf8');
+    expect(appSource).toContain('isUserBoundShortcutEvent(e) {');
+    expect(terminalUiSource).toContain('this.isUserBoundShortcutEvent?.(ev)) return false');
+    expect(tile).toContain('global.app?.isUserBoundShortcutEvent?.(ev)) return false');
+    expect(settings).toContain('this.findShortcutConflict(e, shortcutId)');
+    expect(settings).toContain("return 'Switch to Tab N'");
   });
 });
