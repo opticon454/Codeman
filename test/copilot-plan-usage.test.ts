@@ -2,8 +2,9 @@
  * @fileoverview GitHub Copilot's monthly premium-request quota for the shared plan-usage chip:
  * the quota parser, the sign-in token lookup and the read-only HTTP reader.
  *
- * The fixture is the shape `GET /copilot_internal/user` returned for a Business seat (values rounded);
- * `chat` and `completions` are `unlimited`, only `premium_interactions` is metered.
+ * The fixtures are the shapes `GET /copilot_internal/user` returns: a Business seat (values rounded;
+ * `chat` and `completions` are `unlimited`, `premium_interactions` is metered) and a Free account
+ * (`premium_interactions` has no quota at all, while `chat` 200 and `completions` 2000 are metered).
  */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,6 +31,24 @@ const RESPONSE = {
   },
 };
 
+const FREE_RESPONSE = {
+  copilot_plan: 'free',
+  quota_reset_date_utc: '2026-11-01T00:00:00.000Z',
+  quota_snapshots: {
+    chat: { entitlement: 200, remaining: 150, percent_remaining: 75, unlimited: false, has_quota: true },
+    completions: { entitlement: 2000, remaining: 1900, percent_remaining: 95, unlimited: false, has_quota: true },
+    premium_interactions: {
+      entitlement: 0,
+      remaining: 0,
+      percent_remaining: 0,
+      unlimited: false,
+      has_quota: false,
+      overage_permitted: false,
+      overage_count: 0,
+    },
+  },
+};
+
 describe('parseCopilotQuotaResponse', () => {
   it('maps premium_interactions to a monthly window with counts and the reset instant', () => {
     expect(parseCopilotQuotaResponse(RESPONSE)).toEqual({
@@ -42,9 +61,26 @@ describe('parseCopilotQuotaResponse', () => {
     });
   });
 
-  it('ignores the unlimited chat and completions buckets entirely', () => {
+  it('reports nothing for a Free account, whose premium quota is zero (not 100% used)', () => {
+    expect(parseCopilotQuotaResponse(FREE_RESPONSE)).toBeNull();
+  });
+
+  it('treats has_quota: false, or a non-positive entitlement, as nothing to meter', () => {
+    const base = { entitlement: 300, remaining: 100, percent_remaining: 33, unlimited: false };
+    expect(parseCopilotQuotaResponse({ quota_snapshots: { premium_interactions: base } })).not.toBeNull();
+    for (const patch of [{ has_quota: false }, { entitlement: 0 }, { entitlement: -5 }, { entitlement: undefined }]) {
+      expect(
+        parseCopilotQuotaResponse({ quota_snapshots: { premium_interactions: { ...base, ...patch } } }),
+        JSON.stringify(patch)
+      ).toBeNull();
+    }
+  });
+
+  it('ignores the chat and completions buckets, metered or not', () => {
     const only = { quota_snapshots: { chat: RESPONSE.quota_snapshots.chat } };
     expect(parseCopilotQuotaResponse(only)).toBeNull();
+    const metered = { quota_snapshots: { chat: FREE_RESPONSE.quota_snapshots.chat } };
+    expect(parseCopilotQuotaResponse(metered)).toBeNull();
   });
 
   it('has nothing to meter for an unlimited premium quota', () => {
@@ -163,6 +199,8 @@ describe('readCopilotPlanUsage', () => {
     expect(url).toBe(COPILOT_QUOTA_URL);
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
     expect(init.redirect).toBe('error');
+    // A version GitHub's documented endpoints support (an unsupported one answers 400 there).
+    expect((init.headers as Record<string, string>)['X-GitHub-Api-Version']).toBe('2022-11-28');
   });
 
   it('sends nothing when there is no token', async () => {

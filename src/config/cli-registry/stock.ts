@@ -1571,7 +1571,8 @@ const OMP: CliEntry = {
 // GitHub Copilot CLI (`copilot`, github/copilot-cli, npm @github/copilot). Measured on a live
 // 1.0.94 pane inside tmux (capture-pane through real turns, a shell tool call and /model,
 // 2026-10-09). It is an ALTERNATE-SCREEN TUI with mouse tracking on (tmux `alternate_on=1`,
-// `mouse_any_flag=1`, `history_size=0`), so it joins grok in the tmux-attach-time strip only.
+// `mouse_any_flag=1`, `history_size=0`), so like opencode its mouse DECSETs are stripped
+// (`altScreen: 'strip-mux-and-mouse'` below): a drag selects locally and the wheel is forwarded.
 // Keystrokes sent with `tmux send-keys` reach its composer and a shell tool call completes
 // inside tmux, which github/copilot-cli#4180 (a driven PTY ignoring input) and #4223 (a shell
 // command never reported done under tmux) say they do not on 1.0.70 to 1.0.74: neither

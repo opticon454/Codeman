@@ -2868,7 +2868,8 @@ export class WebServer extends EventEmitter {
     this.copilotUsageRefreshInFlight = true;
     try {
       let usage = null;
-      if (isCopilotAvailable() && (await readPlanUsageTelemetryEnabled())) {
+      // Display off means no probe at all (the resolver spawns `copilot --version`), not just no request.
+      if ((await readPlanUsageTelemetryEnabled()) && isCopilotAvailable()) {
         const token = resolveCopilotToken();
         usage = token ? await readCopilotPlanUsage({ token }) : null;
       }

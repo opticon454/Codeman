@@ -5736,6 +5736,14 @@ Object.assign(CodemanApp.prototype, {
    *    byte-identical — so paging is the only gesture that reaches it. Without
    *    this the wheel was silently dead in every opencode tab.
    *
+   *  - `copilot` (1.0.95, measured in tmux): an alternate-screen TUI like opencode,
+   *    with the alt-screen toggles stripped so xterm's buffer stays one screen. It
+   *    pages its own transcript on PageUp/PageDown (three PageUp moved lines
+   *    109-140 to 010-042 and PageDown returned) and on SGR wheel reports. The
+   *    wheel is forwarded by `_shouldForwardWheelToApp` while it tracks the mouse;
+   *    this is the gesture's fallback when that flag is stale after a server
+   *    restart, so the wheel and a phone swipe never go dead.
+   *
    * Every other mode is deliberately absent: shell/pi own real terminal
    * scrollback, and codex/gemini/antigravity/grok/deepseek/omp page-key behaviour
    * is unverified (docs/scrollback-fix-plan.md).
@@ -5748,7 +5756,7 @@ Object.assign(CodemanApp.prototype, {
    */
   _localScrollbackIsHollow(target = {}) {
     const mode = this.sessions?.get(target.sessionId || this.activeSessionId)?.mode || 'claude';
-    if (mode !== 'claude' && mode !== 'opencode') return false;
+    if (mode !== 'claude' && mode !== 'opencode' && mode !== 'copilot') return false;
     const buf = (target.terminal || this.terminal)?.buffer?.active;
     if (!buf || buf.type === 'alternate') return false;
     const rows = Number.isFinite(target.localRows) ? target.localRows : buf.baseY;

@@ -140,9 +140,12 @@ export function parseCodexRateLimitsResponse(value: unknown): StatusTelemetry | 
 
 /**
  * Normalize GitHub Copilot's quota snapshot (`GET /copilot_internal/user`) into the chip's monthly
- * window. Only `premium_interactions` is a metered quota: `chat` and `completions` report
- * `unlimited: true` on every plan seen, and an unlimited premium quota has nothing to meter, so it
- * yields null and the chip shows no Copilot row rather than a bar stuck at 0%.
+ * window. Only `premium_interactions` is shown. `chat` and `completions` are `unlimited` on the paid
+ * plans and metered (chat 200, completions 2000) on Free; the chip has no window for them either way.
+ * A premium quota with nothing to meter yields null, so the chip shows no Copilot row rather than a
+ * bar stuck at 0% or 100%: an unlimited quota, or one that is not positive / reports
+ * `has_quota: false` (a Free account answers `entitlement: 0, remaining: 0, percent_remaining: 0,
+ * unlimited: false, has_quota: false`, which would otherwise read as 100% used).
  */
 export function parseCopilotQuotaResponse(value: unknown): StatusTelemetry | null {
   if (!value || typeof value !== 'object') return null;
@@ -153,19 +156,23 @@ export function parseCopilotQuotaResponse(value: unknown): StatusTelemetry | nul
         remaining?: unknown;
         percent_remaining?: unknown;
         unlimited?: unknown;
+        has_quota?: unknown;
       };
     };
     quota_reset_date_utc?: unknown;
     quota_reset_date?: unknown;
   };
   const snap = raw.quota_snapshots?.premium_interactions;
-  if (!snap || typeof snap !== 'object' || snap.unlimited === true) return null;
+  if (!snap || typeof snap !== 'object' || snap.unlimited === true || snap.has_quota === false) return null;
 
   const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-  const limit = finite(snap.entitlement) && snap.entitlement > 0 ? snap.entitlement : undefined;
+  // No positive entitlement means no premium quota to meter (percent_remaining is 0 there, which
+  // would read as 100% used).
+  if (!finite(snap.entitlement) || snap.entitlement <= 0) return null;
+  const limit = snap.entitlement;
   let usedPct: number | null = null;
   if (finite(snap.percent_remaining)) usedPct = 100 - snap.percent_remaining;
-  else if (limit !== undefined && finite(snap.remaining)) usedPct = (1 - snap.remaining / limit) * 100;
+  else if (finite(snap.remaining)) usedPct = (1 - snap.remaining / limit) * 100;
   if (usedPct === null) return null;
 
   const resetRaw = typeof raw.quota_reset_date_utc === 'string' ? raw.quota_reset_date_utc : raw.quota_reset_date;
@@ -174,7 +181,7 @@ export function parseCopilotQuotaResponse(value: unknown): StatusTelemetry | nul
     usedPercentage: clampPct(usedPct),
     resetAt: Number.isFinite(parsedReset) && parsedReset > 0 ? parsedReset : 0,
   };
-  if (limit !== undefined && finite(snap.remaining)) {
+  if (finite(snap.remaining)) {
     monthly.limit = limit;
     monthly.used = Math.max(0, Math.round(limit - snap.remaining));
   }
