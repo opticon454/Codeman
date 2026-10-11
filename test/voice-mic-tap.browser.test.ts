@@ -12,15 +12,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { WebServer } from '../src/web/server.js';
 
-const PORT = 3295;
-
 describe('mic button on a phone while the keyboard is up', () => {
   let server: WebServer;
   let browser: Browser;
   let page: Page;
 
   beforeAll(async () => {
-    server = new WebServer(PORT, false, true);
+    // Ephemeral port: a fixed one collides with another run and is refused by test-ports-guard.
+    server = new WebServer(0, false, true);
     await server.start();
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -30,7 +29,7 @@ describe('mic button on a phone while the keyboard is up', () => {
       deviceScaleFactor: 2,
     });
     page = await context.newPage();
-    await page.goto(`http://localhost:${PORT}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`http://localhost:${server.boundPort}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => (window as any).app?.terminal, null, { timeout: 30000 });
     await page.evaluate(() => {
       (window as any).__toggles = 0;
