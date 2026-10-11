@@ -83,7 +83,7 @@ export async function readCopilotPlanUsage(opts: ReadCopilotPlanUsageOptions = {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
         'User-Agent': 'codeman',
-        'X-GitHub-Api-Version': '2025-04-01',
+        'X-GitHub-Api-Version': '2022-11-28',
       },
       redirect: 'error',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
