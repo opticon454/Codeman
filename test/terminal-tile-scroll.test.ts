@@ -226,7 +226,31 @@ describe('a tile pages a hollow buffer through the primary pane gates', () => {
     expect(flushed(ws)).toEqual([{ t: 'i', d: PAGE_UP }]);
   });
 
-  it.each(['shell', 'codex', 'antigravity'])(
+  // codex-cli 0.160+ draws on the alternate screen with no history and pages its transcript with
+  // PageUp/PageDown, so an empty Codex buffer is hollow like opencode's (an inline Codex with real
+  // scrollback keeps scrolling locally, below).
+  it('pages a codex tile with an empty local buffer, even while the active session is a shell', async () => {
+    const app = makeApp({ other: { mode: 'shell' }, 's-tile': { mode: 'codex' } }, 'other');
+    const { ws, mount } = await connectTile(app, { mode: 'codex' });
+
+    mount.fire('wheel', wheelLines(-12));
+
+    expect(flushed(ws)).toEqual([{ t: 'i', d: PAGE_UP }]);
+  });
+
+  it('leaves a codex tile that has real local scrollback to xterm', async () => {
+    const app = makeApp({ other: { mode: 'shell' }, 's-tile': { mode: 'codex' } }, 'other');
+    const { ws, term, mount } = await connectTile(app, { mode: 'codex' });
+    term.buffer.active.baseY = 200;
+
+    const ev = wheelLines(-12);
+    mount.fire('wheel', ev);
+
+    expect(ev.preventDefault).not.toHaveBeenCalled();
+    expect(flushed(ws)).toEqual([]);
+  });
+
+  it.each(['shell', 'antigravity'])(
     'leaves a %s tile to xterm even while the active session is opencode',
     async (mode) => {
       const app = makeApp({ other: { mode: 'opencode' }, 's-tile': { mode } }, 'other');
