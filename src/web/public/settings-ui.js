@@ -554,6 +554,8 @@ Object.assign(CodemanApp.prototype, {
     // Codex remote control: opt-in, default OFF.
     this._codexRcSavedOn = settings.codexRemoteControlEnabled === true;
     document.getElementById('appSettingsCodexRemoteControl').checked = this._codexRcSavedOn;
+    document.getElementById('appSettingsClaudeRemoteControl').checked = settings.claudeRemoteControlEnabled === true;
+    document.getElementById('appSettingsAntigravityRemoteControl').checked = settings.antigravityRemoteControlEnabled === true;
     this.applyCodexRemoteControlVisibility();
     this._applyDoctorAdminGate();
     this.loadWebhook();
@@ -2784,6 +2786,8 @@ Object.assign(CodemanApp.prototype, {
       cliManagementEnabled: document.getElementById('appSettingsCliManagement').checked,
       mcpSyncEnabled: document.getElementById('appSettingsMcpSync').checked,
       codexRemoteControlEnabled: document.getElementById('appSettingsCodexRemoteControl').checked,
+      claudeRemoteControlEnabled: document.getElementById('appSettingsClaudeRemoteControl').checked,
+      antigravityRemoteControlEnabled: document.getElementById('appSettingsAntigravityRemoteControl').checked,
       readMyMindEnabled: document.getElementById('appSettingsReadMyMind').checked,
       ultracodeFloatingWindows: document.getElementById('appSettingsUltracodeFloatingWindows').checked,
       showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,

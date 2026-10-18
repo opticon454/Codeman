@@ -45,7 +45,7 @@ export function registerCodexRemoteControlRoutes(app: FastifyInstance): void {
       reply.code(403);
       return createErrorResponse(
         ApiErrorCode.FORBIDDEN,
-        'Codex remote control is disabled. Turn on "Allow Codex remote control" in Settings and save first.'
+        'Codex remote control is disabled. Turn on "Codex: allow remote control" in Settings and save first.'
       );
     }
     const binary = resolveCodexBinaryPath();

@@ -68,6 +68,8 @@ export interface SpawnBridgeOptions {
    * rendered as two independent params.
    */
   statusLineCommand?: string;
+  /** Launch with the CLI's own remote control on. Resolved by launch-remote-control.ts; local spawns only. */
+  remoteControl?: boolean;
 }
 
 /**
@@ -186,6 +188,7 @@ export function buildSpawnCommandFromRegistry(entry: CliEntry, options: SpawnBri
     // unsafe value inert, it does not launder one into something meaningful).
     sessionName: sanitizeCliSessionName(options.sessionName),
   };
+  if (options.remoteControl) engineValues.remoteControl = 'on';
 
   // Only a launcher CLI has one, and resolving it means a filesystem scan of the launcher's
   // profile tree, so skip the lookup entirely for the eight entries that declare no profile.

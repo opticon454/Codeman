@@ -15,7 +15,13 @@
 import { z } from 'zod';
 import { compileVersionRegex, countCaptureGroups, TOKEN_PATTERNS } from './patterns.js';
 import { isKnownLauncherProfile, isKnownSetenvProfile } from './profiles.js';
-import type { AgentSkillDir, LaunchDefaultSettingKey, McpConfigFormat, ModelConfigResolverName } from './types.js';
+import type {
+  AgentSkillDir,
+  LaunchDefaultSettingKey,
+  LaunchRemoteControlSettingKey,
+  McpConfigFormat,
+  ModelConfigResolverName,
+} from './types.js';
 
 /** `capabilities.agentSkillDir`: every value must stay a fixed, relative, `..`-free path. */
 export const AGENT_SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const satisfies readonly AgentSkillDir[];
@@ -80,6 +86,7 @@ const paramSpecSchema = z.union([
         'muxName',
         'effortLevel',
         'effortSettingsJson',
+        'remoteControl',
         'codemanPrefixedSessionId',
         'launcherDefaultTarget',
       ]),
@@ -224,6 +231,7 @@ const envExportSchema = z
             'muxName',
             'effortLevel',
             'effortSettingsJson',
+            'remoteControl',
             'codemanPrefixedSessionId',
             'launcherDefaultTarget',
           ]),
@@ -451,6 +459,16 @@ const capabilitiesSchema = z
         z.enum(['codexModel', 'codexReasoningEffort'] as const satisfies readonly LaunchDefaultSettingKey[])
       )
       .refine((v) => Object.keys(v).length >= 1 && Object.keys(v).length <= 8, 'launchDefaults takes 1 to 8 params')
+      .optional(),
+    // Closed enum, like launchDefaults: a clis.json override names a setting this build can read.
+    launchRemoteControl: z
+      .object({
+        setting: z.enum([
+          'claudeRemoteControlEnabled',
+          'antigravityRemoteControlEnabled',
+        ] as const satisfies readonly LaunchRemoteControlSettingKey[]),
+      })
+      .strict()
       .optional(),
     privilegedParams: z
       .array(
@@ -680,7 +698,19 @@ export const CliEntrySchema = z
     // would be filled into the config object and then read by nothing. And without a
     // `legacyConfigField` the entry's params are read off the request body itself, where a
     // filled `model` would be a different field (claude's per-session one), so refuse it.
-    const { launchDefaults } = entry.capabilities;
+    const { launchDefaults, launchRemoteControl } = entry.capabilities;
+    // The flag is rendered from the `remoteControl` engine value, so a template without that param
+    // would offer a setting that changes nothing.
+    if (
+      launchRemoteControl !== undefined &&
+      !Object.values(entry.launch.params).some((p) => p.type === 'engine' && p.source === 'remoteControl')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'launchRemoteControl needs a launch param with engine source "remoteControl"',
+        path: ['capabilities', 'launchRemoteControl'],
+      });
+    }
     if (launchDefaults !== undefined) {
       if (entry.launch.legacyConfigField === undefined) {
         ctx.addIssue({

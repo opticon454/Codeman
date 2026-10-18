@@ -75,6 +75,7 @@ import {
   readPlanUsageTelemetryEnabled,
   findEffectiveUserStatusLineCommand,
 } from './hooks-config.js';
+import { readLaunchRemoteControl } from './launch-remote-control.js';
 import {
   buildSshConnectionArgs,
   defaultRemoteCommandForMode,
@@ -1091,6 +1092,8 @@ export function buildSpawnCommand(options: {
   advisorModel?: string;
   /** Resolved by resolveStatusLineCliCommand (hooks-config.ts) — undefined skips the exporter. Claude only. */
   statusLineCommand?: string;
+  /** Start with the CLI's own remote control on (readLaunchRemoteControl; local spawns only). */
+  remoteControl?: boolean;
   /** Name pinned on claude as `--name` (version-gated, sanitized; local spawns only). By default only a user-chosen name; `pinCliSessionName` pins every tab name: see `Session.cliPinnedName`. */
   sessionName?: string;
   /**
@@ -2394,6 +2397,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     // can wrap it. Only worth discovering when we're actually injecting.
     const userStatusLineCommand = statusLineCommand ? await findEffectiveUserStatusLineCommand(workingDir) : undefined;
 
+    const remoteControl = await readLaunchRemoteControl(mode, !!(remote || docker));
     const baseCmd = buildSpawnCommand({
       mode,
       sessionId,
@@ -2413,6 +2417,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       effort,
       advisorModel,
       statusLineCommand,
+      remoteControl,
       sessionName: cliName,
     });
 
@@ -2686,6 +2691,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
     );
     const userStatusLineCommand = statusLineCommand ? await findEffectiveUserStatusLineCommand(workingDir) : undefined;
 
+    const remoteControl = await readLaunchRemoteControl(mode, !!(remote || docker));
     const baseCmd = buildSpawnCommand({
       mode,
       sessionId,
@@ -2705,6 +2711,7 @@ export class TmuxManager extends EventEmitter implements TerminalMultiplexer {
       effort,
       advisorModel,
       statusLineCommand,
+      remoteControl,
       sessionName: cliName,
     });
     const config = niceConfig || DEFAULT_NICE_CONFIG;

@@ -2,4 +2,4 @@
 "aicodeman": minor
 ---
 
-Codex remote control: Settings gets an opt-in switch (off by default) and Start, Pair and Stop buttons for the Codex CLI's own `codex remote-control` command, so another device can drive Codex on this machine without a shell. Stop always works, even with the switch off; in multi-user mode it is admin only, and Codeman never starts it on its own.
+Optional remote control for the CLIs that have one, all off by default, as a fallback for when the Codeman page can't be reached (a firewall, DNS, an external proxy). Settings gets a "Remote control" group: Claude Code and Antigravity switches that start new local sessions with `--remote-control`, so the vendor's phone or web client drives them through its relay over outbound connections, and a Codex switch with Start, Pair and Stop buttons for `codex remote-control`. Claude's flag is skipped on a claude older than 2.1.51; remote-SSH and Docker sessions never get it; Codex's Stop always works; the Codex controls are admin only in multi-user mode, and Codeman never starts any of it on its own.

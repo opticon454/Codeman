@@ -29,6 +29,8 @@ export type EngineValue =
   | 'muxName'
   | 'effortLevel'
   | 'effortSettingsJson'
+  /** `'on'` when this launch should start with the CLI's own remote control enabled (see `launchRemoteControl`). */
+  | 'remoteControl'
   /** `sessionId` prefixed `codeman_<id>` — codex's unique per-pane rollout originator. */
   | 'codemanPrefixedSessionId'
   /**
@@ -111,6 +113,13 @@ export type ModelConfigResolverName = 'deepseek-route';
  * key, which the resolver's typing enforces.
  */
 export type LaunchDefaultSettingKey = 'codexModel' | 'codexReasoningEffort';
+
+/**
+ * The synced App Settings keys `capabilities.launchRemoteControl` may name (src/launch-remote-control.ts).
+ * Closed for the same reason as LaunchDefaultSettingKey: a clis.json override names a setting this
+ * build knows how to read, never an arbitrary key.
+ */
+export type LaunchRemoteControlSettingKey = 'claudeRemoteControlEnabled' | 'antigravityRemoteControlEnabled';
 
 /** The MCP config dialects `src/mcp-sync.ts` has an adapter for. */
 export type McpConfigFormat =
@@ -637,6 +646,14 @@ export interface CliCapabilities {
    * Absent = no launch defaults.
    */
   launchDefaults?: Record<string, LaunchDefaultSettingKey>;
+  /**
+   * This CLI can be launched with its own remote control on (a phone or web client drives the
+   * session through the vendor's relay, outbound connections only). `setting` is the synced,
+   * default-OFF App Settings switch; when it is on, a LOCAL launch (never remote or Docker) gets
+   * the `remoteControl` engine value `'on'`, which the entry's launch template turns into the
+   * CLI's flag. The template must declare a `remoteControl` engine param. Absent = not offered.
+   */
+  launchRemoteControl?: { setting: LaunchRemoteControlSettingKey };
   /**
    * Params a non-granted multi-user owner may not set freely, and what they are forced to.
    * Data-driven so a CUSTOM CLI's bypass flag is clampable exactly like codex's.

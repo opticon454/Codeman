@@ -401,3 +401,31 @@ their native cloud backend, for one session at a time, an opt-in feature covered
 - [Settings Reference](Settings-Reference) - model, effort, and permission-mode settings.
 - [Keeping Agents Running](Keeping-Agents-Running) - what idle detection does per mode.
 - [Security](Security) - what skipping permission prompts actually means.
+
+## Remote control (optional)
+
+Some CLIs have their own remote control, so you can follow and steer a session from your phone.
+All of it is **off by default**, and none of it replaces the Codeman page: it is a fallback for
+when that page cannot be reached, for example behind a firewall, or when DNS or an external proxy
+is in the way. The vendor-hosted ones connect **outwards** to the vendor's relay, so they keep
+working when nothing can reach this machine. Anyone signed in to your account on the other device
+can use the session, so treat it like a password.
+
+| CLI         | How Codeman turns it on                                                             | Client                                      | Needs                                                 |
+| ----------- | ----------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------- |
+| Claude Code | Settings → Remote control. New local sessions start with `--remote-control`         | Claude mobile app, claude.ai/code           | claude.ai sign-in, Claude Code 2.1.51 or later [^rc1] |
+| Antigravity | Settings → Remote control. New local sessions start with `--remote-control`         | Antigravity dashboard (installable web app) | A Google sign-in, `agy` with Remote Control           |
+| Codex       | Settings → Remote control: **Start**, **Pair**, **Stop** run `codex remote-control` | ChatGPT mobile app                          | Codex 0.162 or later, experimental [^rc2]             |
+
+The Claude and Antigravity switches apply to **new local sessions** only: running sessions are not
+changed, and remote-SSH and Docker sessions never get the flag. A Claude older than 2.1.51 starts
+without it. In multi-user mode the Codex controls are admin only. **Stop** (Codex) works even with
+its switch off.
+
+Not covered yet: GitHub Copilot CLI (`copilot --remote`, shown in GitHub Mobile) once it is a run
+mode, and the self-hosted servers (opencode `serve`/`web`, the Codex app-server), which need the
+phone to reach this machine and so do not help when Codeman itself is unreachable. Gemini, Pi, OMP
+and Grok have no official remote control.
+
+[^rc1]: Anthropic documents Remote Control as unavailable with API-key sign-in or a custom base URL (a third-party guide says the same of gateways and Bedrock-style setups). See the [Claude Code docs](https://code.claude.com/docs/en/remote-control).
+[^rc2]: Codex's own command; its options and output can change between releases. Third-party write-ups say mobile pairing may start from the Codex desktop app rather than the CLI, so check that `Pair` gives you what your phone expects.

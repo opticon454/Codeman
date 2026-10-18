@@ -55,6 +55,9 @@ interface CliEntry {
   //   .launchDefaults?: { [launchParam]: settingsKey }
   //   (synced App Settings that seed a LOCAL launch's params the caller left unset;
   //   codex's model and reasoning effort, via src/web/launch-defaults.ts)
+  //   .launchRemoteControl?: { setting }
+  //   (this CLI can launch with its own remote control on, behind a synced default-OFF switch;
+  //   the template renders the flag from a `remoteControl` engine param; src/launch-remote-control.ts)
   overlays: CliOverlays; // remote-SSH / Docker pane commands, credential store
 }
 ```
@@ -331,6 +334,12 @@ A module-level const freezes at first import, and the failure is asymmetric: a C
 3. Add a golden spawn-command pin to `test/cli-registry-spawn-golden.test.ts`, a row to `test/cli-capability-predicates.test.ts`, its remote/docker commands to `test/location-overlay-commands.test.ts`, and its search paths to `test/install-sh-detection-parity.test.ts`.
 4. Only if it cannot install with a plain `npm install -g <pkg>`: give it a layer in `docker/agent.Dockerfile` and set `discovery.install.agentImageLayer: { kind: 'dedicated', reason }` on its entry in `stock.ts`. `test/docker-agent-image-coverage.test.ts` requires both, so an exclusion cannot quietly become an omission. An entry with no `npmPackage` needs only the Dockerfile layer, since it never enters the shared npm layer in the first place.
 5. That is usually all. If you find yourself wanting to add an `if` somewhere, the guard test will tell you — and the answer is a capability field, or a named profile if it genuinely needs to run code.
+
+## Launching with remote control
+
+A CLI that has its own phone or web remote control can declare `capabilities.launchRemoteControl: { setting }`, naming a synced App Settings switch (a closed list: `claudeRemoteControlEnabled`, `antigravityRemoteControlEnabled`; default OFF). Its launch template declares a `remoteControl` engine param and renders the CLI's flag from it, for example `{ flag: '--remote-control', when: { param: 'remoteControl', state: 'set' } }`, behind a `capabilityGate` when the flag has a known minimum version (Claude's is fail-closed, like `--name`). The schema refuses a `launchRemoteControl` without that param.
+
+`readLaunchRemoteControl()` (`src/launch-remote-control.ts`) reads the setting fresh on every spawn, in the same two places `tmux-manager.ts` resolves the statusLine exporter, and only for LOCAL launches: a remote-SSH or Docker launch never gets it. Running sessions are never touched. Codex is not a launch flag but a daemon, so it has its own routes (`POST /api/codex-remote-control/:action`).
 
 ## MCP server sync
 

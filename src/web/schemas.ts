@@ -1527,6 +1527,14 @@ export const SettingsUpdateSchema = z
      */
     codexRemoteControlEnabled: z.boolean().optional(),
     /**
+     * Start NEW local Claude Code / Antigravity sessions with the CLI's own remote control on
+     * (`claude --remote-control`, `agy --remote-control`; see src/launch-remote-control.ts), so the
+     * vendor's phone or web client can drive them through its relay when this Codeman is not
+     * reachable. SYNCED, default OFF. Running sessions are not changed.
+     */
+    claudeRemoteControlEnabled: z.boolean().optional(),
+    antigravityRemoteControlEnabled: z.boolean().optional(),
+    /**
      * Read My Mind predictor model override. Empty/absent = the AI-checker
      * default (opus: prediction quality is the product and it runs only on an
      * explicit press). Shell-safety is validated again at spawn time.

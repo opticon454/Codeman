@@ -146,6 +146,7 @@ const CLAUDE: CliEntry = {
       effortJson: { type: 'engine', source: 'effortSettingsJson' },
       sessionId: { type: 'engine', source: 'sessionId' },
       sessionName: { type: 'engine', source: 'sessionName' },
+      remoteControl: { type: 'engine', source: 'remoteControl' },
     },
     variants: [
       {
@@ -171,6 +172,10 @@ const CLAUDE: CliEntry = {
           { flag: '--effort', valueFrom: 'effortLevel', quote: 'single', when: { param: 'effortLevel', state: 'set' } },
           { flag: '--settings', valueFrom: 'effortJson', quote: 'single', when: { param: 'effortJson', state: 'set' } },
           { flag: '--name', valueFrom: 'sessionName', quote: 'double', when: { capabilityGate: 'nameFlag' } },
+          {
+            flag: '--remote-control',
+            when: { allOf: [{ param: 'remoteControl', state: 'set' }, { capabilityGate: 'remoteControlFlag' }] },
+          },
         ],
       },
       {
@@ -195,6 +200,10 @@ const CLAUDE: CliEntry = {
           { flag: '--effort', valueFrom: 'effortLevel', quote: 'single', when: { param: 'effortLevel', state: 'set' } },
           { flag: '--settings', valueFrom: 'effortJson', quote: 'single', when: { param: 'effortJson', state: 'set' } },
           { flag: '--name', valueFrom: 'sessionName', quote: 'double', when: { capabilityGate: 'nameFlag' } },
+          {
+            flag: '--remote-control',
+            when: { allOf: [{ param: 'remoteControl', state: 'set' }, { capabilityGate: 'remoteControlFlag' }] },
+          },
         ],
       },
     ],
@@ -329,7 +338,13 @@ const CLAUDE: CliEntry = {
       'CLAUDE_CODE_MAX_CONTEXT_TOKENS',
       'CLAUDE_CONFIG_DIR',
     ],
-    gates: { nameFlag: { minVersion: '2.1.224', failClosed: true } },
+    // remoteControlFlag: 2.1.51 is the version Anthropic's docs give for Remote Control itself; an older
+    // claude gets no flag (a session without remote control) rather than an unknown-flag exit.
+    gates: {
+      nameFlag: { minVersion: '2.1.224', failClosed: true },
+      remoteControlFlag: { minVersion: '2.1.51', failClosed: true },
+    },
+    launchRemoteControl: { setting: 'claudeRemoteControlEnabled' },
     // claude reads `$CLAUDE_CONFIG_DIR/.claude.json` when that is set (checked in 2.1.289).
     mcpConfig: {
       path: '.claude.json',
@@ -967,6 +982,7 @@ const ANTIGRAVITY: CliEntry = {
       dangerouslySkipPermissions: { type: 'bool' },
       model: { type: 'token', pattern: 'model' },
       resumeId: { type: 'token', pattern: 'id-dotted' },
+      remoteControl: { type: 'engine', source: 'remoteControl' },
     },
     variants: [
       {
@@ -976,6 +992,7 @@ const ANTIGRAVITY: CliEntry = {
           { flag: '--dangerously-skip-permissions', when: { param: 'dangerouslySkipPermissions', is: true } },
           { flag: '--model', valueFrom: 'model', when: { param: 'model', state: 'set' } },
           { flag: '--conversation', valueFrom: 'resumeId', when: { param: 'resumeId', state: 'set' } },
+          { flag: '--remote-control', when: { param: 'remoteControl', state: 'set' } },
         ],
       },
     ],
@@ -1025,6 +1042,7 @@ const ANTIGRAVITY: CliEntry = {
     privilegedParams: [{ param: 'dangerouslySkipPermissions', clampTo: false }],
     // No relocation var: `agy` 1.1.12 resolves `~/.gemini/config` from $HOME only.
     mcpConfig: { path: '.gemini/config/mcp_config.json', format: 'antigravity-json' },
+    launchRemoteControl: { setting: 'antigravityRemoteControlEnabled' },
     // No known CLI/env/config mechanism — Antigravity's own docs describe a GUI-only
     // custom-endpoint setting and explicitly say it "cannot currently" become the core
     // reasoning model. Toolbar entry stays disabled for this mode.

@@ -2888,11 +2888,25 @@
               </div>
 
               <div class="set-group" id="codexRemoteControlGroup">
-                <div class="set-group-head"><h4>Codex remote control</h4><span class="set-scope">synced</span></div>
+                <div class="set-group-head"><h4>Remote control</h4><span class="set-scope">synced</span></div>
                 <div class="set-group-body">
+                  <div class="set-row" data-search="remote control claude phone mobile app firewall relay">
+                    <div class="set-row-text">
+                      <span class="set-row-label">Claude Code: start sessions with remote control</span>
+                      <span class="set-row-desc">New local Claude sessions start with <code>--remote-control</code>, so the Claude mobile app or claude.ai/code can drive them through Anthropic's relay (outbound connections only). That keeps working when this page can't be reached because of a firewall or DNS. Needs a claude.ai sign-in and Claude Code 2.1.51 or later; Anthropic documents it as unavailable with API-key sign-in or a custom base URL. Off by default; running sessions are not changed.</span>
+                    </div>
+                    <label class="switch switch-sm"><input type="checkbox" id="appSettingsClaudeRemoteControl"><span class="slider"></span></label>
+                  </div>
+                  <div class="set-row" data-search="remote control antigravity agy phone mobile app firewall relay">
+                    <div class="set-row-text">
+                      <span class="set-row-label">Antigravity: start sessions with remote control</span>
+                      <span class="set-row-desc">New local Antigravity sessions start with <code>--remote-control</code>, so Google's Antigravity dashboard (a browser page you can install as a web app) can drive them through a tunnel. Needs a version of <code>agy</code> that has Remote Control and the same Google sign-in as the dashboard. Off by default; running sessions are not changed.</span>
+                    </div>
+                    <label class="switch switch-sm"><input type="checkbox" id="appSettingsAntigravityRemoteControl"><span class="slider"></span></label>
+                  </div>
                   <div class="set-row" data-search="codex remote control daemon pair pairing app-server">
                     <div class="set-row-text">
-                      <span class="set-row-label">Allow Codex remote control</span>
+                      <span class="set-row-label">Codex: allow remote control</span>
                       <span class="set-row-desc">Adds controls that run <code>codex remote-control</code> (experimental, Codex 0.162 and later) so another device can drive Codex on this machine. Off by default: anyone who gets a pairing code can use your Codex here. Codeman never starts it on its own.</span>
                     </div>
                     <label class="switch switch-sm"><input type="checkbox" id="appSettingsCodexRemoteControl" onchange="app.applyCodexRemoteControlVisibility()"><span class="slider"></span></label>
