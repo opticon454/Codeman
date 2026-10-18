@@ -208,6 +208,7 @@ import {
   registerWebviewRoutes,
   registerTabLayoutRoutes,
   registerMcpSyncRoutes,
+  registerCodexRemoteControlRoutes,
   registerWebhookRoutes,
   registerDoctorRoutes,
   registerCustomModelRoutes,
@@ -1179,6 +1180,7 @@ export class WebServer extends EventEmitter {
     registerWebviewRoutes(this.app, ctx, this.basePath);
     registerTabLayoutRoutes(this.app, ctx);
     registerMcpSyncRoutes(this.app);
+    registerCodexRemoteControlRoutes(this.app);
     registerWebhookRoutes(this.app, {
       notifier: this.webhookNotifier,
       configDir: getDataDir(),

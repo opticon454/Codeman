@@ -2886,6 +2886,31 @@
                   <div id="mcpSyncResult" class="set-note" style="display:none"></div>
                 </div>
               </div>
+
+              <div class="set-group" id="codexRemoteControlGroup">
+                <div class="set-group-head"><h4>Codex remote control</h4><span class="set-scope">synced</span></div>
+                <div class="set-group-body">
+                  <div class="set-row" data-search="codex remote control daemon pair pairing app-server">
+                    <div class="set-row-text">
+                      <span class="set-row-label">Allow Codex remote control</span>
+                      <span class="set-row-desc">Adds controls that run <code>codex remote-control</code> (experimental, Codex 0.162 and later) so another device can drive Codex on this machine. Off by default: anyone who gets a pairing code can use your Codex here. Codeman never starts it on its own.</span>
+                    </div>
+                    <label class="switch switch-sm"><input type="checkbox" id="appSettingsCodexRemoteControl" onchange="app.applyCodexRemoteControlVisibility()"><span class="slider"></span></label>
+                  </div>
+                  <div class="set-row" data-search="codex remote control start stop pair">
+                    <div class="set-row-text">
+                      <span class="set-row-label">Remote control daemon</span>
+                      <span class="set-row-desc">Start runs the Codex app-server daemon with remote control on; Pair prints a short-lived code to enter on the other device; Stop shuts the daemon down (always available). Save the switch above first.</span>
+                    </div>
+                    <span>
+                      <button class="btn-toolbar btn-sm btn-primary" id="codexRcStartBtn" onclick="app.codexRemoteControl('start')">Start</button>
+                      <button class="btn-toolbar btn-sm" id="codexRcPairBtn" onclick="app.codexRemoteControl('pair')">Pair</button>
+                      <button class="btn-toolbar btn-sm" id="codexRcStopBtn" onclick="app.codexRemoteControl('stop')">Stop</button>
+                    </span>
+                  </div>
+                  <pre id="codexRcResult" class="set-note" style="display:none" data-i18n-skip></pre>
+                </div>
+              </div>
             </section>
 
             <!-- ══ Notifications ════════════════════════════════════════════ -->

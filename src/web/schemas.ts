@@ -1522,6 +1522,11 @@ export const SettingsUpdateSchema = z
      */
     mcpSyncEnabled: z.boolean().optional(),
     /**
+     * Allow `codex remote-control start|pair` from Settings (src/codex-remote-control.ts). SYNCED, default
+     * OFF: it lets another device drive Codex on this machine. `stop` is never gated.
+     */
+    codexRemoteControlEnabled: z.boolean().optional(),
+    /**
      * Read My Mind predictor model override. Empty/absent = the AI-checker
      * default (opus: prediction quality is the product and it runs only on an
      * explicit press). Shell-safety is validated again at spawn time.

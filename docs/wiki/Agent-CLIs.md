@@ -166,6 +166,15 @@ Two behaviours that are deliberate and worth knowing:
   as working), and agents can wait on it with the `blocked` signal. "Implement this plan?"
   at the end of a plan is not counted, since the turn has ended there.
 
+**Remote control (opt-in).** Codex 0.162 and later can run its app-server daemon with remote control
+on, so another device can drive Codex on this machine. Codex does not enable this by default and
+neither does Codeman: turn on **Allow Codex remote control** in App Settings, save, then use
+**Start** (runs `codex remote-control start`), **Pair** (prints a short-lived pairing code to enter
+on the other device) and **Stop**. Anyone with a pairing code can use your Codex on this machine,
+so treat it like a password. **Stop** works even with the switch off. In multi-user mode it is
+admin only. The command is Codex's own and marked experimental, so its options and output can
+change between Codex releases.
+
 ### Gemini
 
 Enterprise only, since Google's June 2026 consumer cutover. Its environment allowlist

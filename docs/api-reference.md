@@ -1129,6 +1129,14 @@ Read and write the CLI registry (`docs/cli-registry.md`). Every **write** route 
 | `PUT`    | `/api/clis/custom/:id`        | `{ label, shortBadge, binaries, argv, enabled? }`       | Replace an existing custom entry. An absent `enabled` keeps the entry's current state. `400` for a stock id, `404` for an unknown one. |
 | `DELETE` | `/api/clis/:id`               | none                                                    | Delete a custom entry. `400` for a stock id, `404` for an unknown one.                                  |
 
+## Codex remote control
+
+Runs the Codex CLI's own experimental `codex remote-control` command (Codex 0.162 and later) so another device can drive Codex on this machine. **Opt-in:** `start` and `pair` answer `403 FORBIDDEN` while the synced `codexRemoteControlEnabled` setting is off (the default); `stop` is never gated, so switching the setting off cannot strand a running daemon. It controls the server user's Codex, so in multi-user mode every action is admin only. Codeman never starts it on its own.
+
+| Method | Path                                | Body | Notes                                                                                                                                                                                                                                         |
+| ------ | ----------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/codex-remote-control/:action` | none | `:action` is `start`, `stop` or `pair`. Runs `codex remote-control <action> --json`. `data`: `action` and `output` (Codex's output, parsed when JSON, else text; for `pair` it is a short-lived pairing code, a credential, and is never logged). `400` unknown action, `403` disabled or not admin, `404` Codex not installed, `409` another command is running, `502` the command failed (Codex's stderr in `error`). |
+
 ## MCP server sync
 
 Copies MCP servers between the agent CLIs' own user-level config files (`docs/cli-registry.md`, "MCP server sync"). **Opt-in:** both routes answer `403 FORBIDDEN` while the synced `mcpSyncEnabled` setting is off (the default), and for a non-admin in multi-user mode, because the routes write files in the server user's home. A second `POST` while one is running answers `409 CONFLICT`.

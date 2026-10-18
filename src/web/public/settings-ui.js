@@ -551,6 +551,10 @@ Object.assign(CodemanApp.prototype, {
     this._mcpSyncSavedOn = settings.mcpSyncEnabled === true;
     document.getElementById('appSettingsMcpSync').checked = this._mcpSyncSavedOn;
     this.applyMcpSyncVisibility();
+    // Codex remote control: opt-in, default OFF.
+    this._codexRcSavedOn = settings.codexRemoteControlEnabled === true;
+    document.getElementById('appSettingsCodexRemoteControl').checked = this._codexRcSavedOn;
+    this.applyCodexRemoteControlVisibility();
     this._applyDoctorAdminGate();
     this.loadWebhook();
     // Read My Mind: synced, default OFF (opt-in; capture + prediction cost real tokens).
@@ -1362,6 +1366,48 @@ Object.assign(CodemanApp.prototype, {
     if (!group) return;
     const me = window.__codemanUser || {};
     group.style.display = me.multiUser && me.role !== 'admin' ? 'none' : '';
+  },
+
+  /**
+   * Codex remote control is opt-in (`codexRemoteControlEnabled`). Start and Pair are disabled while the
+   * switch is off; Stop stays enabled so turning the switch off never strands a running daemon.
+   */
+  applyCodexRemoteControlVisibility() {
+    const on = document.getElementById('appSettingsCodexRemoteControl')?.checked ?? false;
+    for (const id of ['codexRcStartBtn', 'codexRcPairBtn']) {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !on;
+    }
+    this._applyCodexRcAdminGate();
+  },
+
+  /** The endpoint drives the server user's Codex, so it is admin-only in multi-user mode: no group for a non-admin. */
+  _applyCodexRcAdminGate() {
+    const group = document.getElementById('codexRemoteControlGroup');
+    if (!group) return;
+    const me = window.__codemanUser || {};
+    group.style.display = me.multiUser && me.role !== 'admin' ? 'none' : '';
+  },
+
+  /** Run `codex remote-control <action>` on the server and show what Codex printed. */
+  async codexRemoteControl(action) {
+    const out = this.$('codexRcResult');
+    const show = (text) => { if (out) { out.style.display = 'block'; out.textContent = text; } };
+    if (action !== 'stop' && !this._codexRcSavedOn) {
+      show('Save settings to turn Codex remote control on first.');
+      return;
+    }
+    if (action === 'start' && !confirm('Start the Codex daemon with remote control on? Another device can then drive Codex on this machine once paired.')) return;
+    show('Working…');
+    const res = await this._apiPost(`/api/codex-remote-control/${encodeURIComponent(action)}`, {});
+    let body = null;
+    try { body = res ? await res.json() : null; } catch { /* fall through */ }
+    if (!res || !res.ok || !body || body.success === false) {
+      show(body?.error || 'Codex remote control failed.');
+      return;
+    }
+    const o = body.data.output;
+    show(typeof o === 'string' ? (o || 'Done.') : JSON.stringify(o, null, 2));
   },
 
   /** Preview (apply=false) or run (apply=true) the MCP server sync across enabled CLIs. */
@@ -2737,6 +2783,7 @@ Object.assign(CodemanApp.prototype, {
       customModelEndpointsEnabled: document.getElementById('appSettingsCustomModelEndpoints').checked,
       cliManagementEnabled: document.getElementById('appSettingsCliManagement').checked,
       mcpSyncEnabled: document.getElementById('appSettingsMcpSync').checked,
+      codexRemoteControlEnabled: document.getElementById('appSettingsCodexRemoteControl').checked,
       readMyMindEnabled: document.getElementById('appSettingsReadMyMind').checked,
       ultracodeFloatingWindows: document.getElementById('appSettingsUltracodeFloatingWindows').checked,
       showMultiMonitorButton: document.getElementById('appSettingsShowMultiMonitorButton').checked,
@@ -3322,6 +3369,8 @@ Object.assign(CodemanApp.prototype, {
       out.innerHTML = '';
     }
     this.applyMcpSyncVisibility();
+    this._codexRcSavedOn = settings.codexRemoteControlEnabled === true;
+    this.applyCodexRemoteControlVisibility();
     this.applyCustomModelEndpointsVisibility();
     this.applyCliManagementVisibility();
     this._applyDoctorAdminGate();
@@ -5238,5 +5287,6 @@ document.addEventListener?.('codeman:me', () => {
   window.app?._applyCustomModelAdminGate?.();
   window.app?._applyCliManagementAdminGate?.();
   window.app?._applyMcpSyncAdminGate?.();
+  window.app?._applyCodexRcAdminGate?.();
   window.app?._applyDoctorAdminGate?.();
 });
