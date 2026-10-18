@@ -337,7 +337,7 @@ A module-level const freezes at first import, and the failure is asymmetric: a C
 
 ## Launching with remote control
 
-A CLI that has its own phone or web remote control can declare `capabilities.launchRemoteControl: { setting }`, naming a synced App Settings switch (a closed list: `claudeRemoteControlEnabled`, `antigravityRemoteControlEnabled`; default OFF). Its launch template declares a `remoteControl` engine param and renders the CLI's flag from it, for example `{ flag: '--remote-control', when: { param: 'remoteControl', state: 'set' } }`, behind a `capabilityGate` when the flag has a known minimum version (Claude's is fail-closed, like `--name`). The schema refuses a `launchRemoteControl` without that param.
+A CLI that has its own phone or web remote control can declare `capabilities.launchRemoteControl: { setting }`, naming a synced App Settings switch (a closed list: `claudeRemoteControlEnabled`, `antigravityRemoteControlEnabled`, `copilotRemoteControlEnabled`; default OFF). Its launch template declares a `remoteControl` engine param and renders the CLI's flag from it, for example `{ flag: '--remote-control', when: { param: 'remoteControl', state: 'set' } }`, behind a `capabilityGate` when the flag has a known minimum version (Claude's is fail-closed, like `--name`). The schema refuses a `launchRemoteControl` without that param.
 
 `readLaunchRemoteControl()` (`src/launch-remote-control.ts`) reads the setting fresh on every spawn, in the same two places `tmux-manager.ts` resolves the statusLine exporter, and only for LOCAL launches: a remote-SSH or Docker launch never gets it. Running sessions are never touched. Codex is not a launch flag but a daemon, so it has its own routes (`POST /api/codex-remote-control/:action`).
 

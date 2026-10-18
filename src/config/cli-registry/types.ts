@@ -119,7 +119,10 @@ export type LaunchDefaultSettingKey = 'codexModel' | 'codexReasoningEffort';
  * Closed for the same reason as LaunchDefaultSettingKey: a clis.json override names a setting this
  * build knows how to read, never an arbitrary key.
  */
-export type LaunchRemoteControlSettingKey = 'claudeRemoteControlEnabled' | 'antigravityRemoteControlEnabled';
+export type LaunchRemoteControlSettingKey =
+  | 'claudeRemoteControlEnabled'
+  | 'antigravityRemoteControlEnabled'
+  | 'copilotRemoteControlEnabled';
 
 /** The MCP config dialects `src/mcp-sync.ts` has an adapter for. */
 export type McpConfigFormat =

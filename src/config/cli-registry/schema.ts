@@ -466,6 +466,7 @@ const capabilitiesSchema = z
         setting: z.enum([
           'claudeRemoteControlEnabled',
           'antigravityRemoteControlEnabled',
+          'copilotRemoteControlEnabled',
         ] as const satisfies readonly LaunchRemoteControlSettingKey[]),
       })
       .strict()

@@ -45,6 +45,16 @@ describe('other launch templates', () => {
     expect(buildSpawnCommand({ mode: 'antigravity', sessionId: 'abc' })).not.toContain(FLAG);
   });
 
+  it('copilot adds --remote when on, and not otherwise', () => {
+    const on = buildSpawnCommand({ mode: 'copilot', sessionId: 'abc', remoteControl: true });
+    expect(on).toContain('copilot');
+    expect(on).toMatch(/ --remote(\s|$)/);
+    expect(buildSpawnCommand({ mode: 'copilot', sessionId: 'abc' })).not.toContain('--remote');
+    expect(buildSpawnCommand({ mode: 'copilot', sessionId: 'abc', remoteControl: false })).toBe(
+      buildSpawnCommand({ mode: 'copilot', sessionId: 'abc' })
+    );
+  });
+
   it('a CLI that does not declare it ignores the value', () => {
     for (const mode of ['codex', 'gemini', 'opencode']) {
       expect(buildSpawnCommand({ mode, sessionId: 'abc', remoteControl: true }), mode).not.toContain(FLAG);
@@ -77,6 +87,9 @@ describe('readLaunchRemoteControl', () => {
     settings({ antigravityRemoteControlEnabled: true });
     expect(await readLaunchRemoteControl('antigravity', false)).toBe(true);
     expect(await readLaunchRemoteControl('claude', false)).toBe(false);
+    settings({ copilotRemoteControlEnabled: true });
+    expect(await readLaunchRemoteControl('copilot', false)).toBe(true);
+    expect(await readLaunchRemoteControl('antigravity', false)).toBe(false);
   });
 
   it('never applies to remote or Docker launches, nor to a CLI without the capability', async () => {

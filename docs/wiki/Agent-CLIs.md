@@ -415,6 +415,7 @@ can use the session, so treat it like a password.
 | ----------- | ----------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------- |
 | Claude Code | Settings → Remote control. New local sessions start with `--remote-control`         | Claude mobile app, claude.ai/code           | claude.ai sign-in, Claude Code 2.1.51 or later [^rc1] |
 | Antigravity | Settings → Remote control. New local sessions start with `--remote-control`         | Antigravity dashboard (installable web app) | A Google sign-in, `agy` with Remote Control           |
+| GitHub Copilot | Settings → Remote control. New local sessions start with `--remote` | GitHub on the web, GitHub mobile app | A GitHub sign-in, a Copilot CLI with `--remote` (1.0.98 has it) |
 | Codex       | Settings → Remote control: **Start**, **Pair**, **Stop** run `codex remote-control` | ChatGPT mobile app                          | Codex 0.162 or later, experimental [^rc2]             |
 
 The Claude and Antigravity switches apply to **new local sessions** only: running sessions are not

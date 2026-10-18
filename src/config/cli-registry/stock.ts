@@ -1740,12 +1740,18 @@ const COPILOT: CliEntry = {
       continueSession: { type: 'bool' },
       // The tab's name, so the CLI's own session list reads the same as the tab.
       sessionName: { type: 'engine', source: 'sessionName' },
+      remoteControl: { type: 'engine', source: 'remoteControl' },
     },
     variants: [
       {
         id: 'default',
         args: [
           { lit: 'copilot' },
+          // `--remote`: "Enable remote control of your session from GitHub web and mobile"
+          // (copilot 1.0.98 `--help`). Only with the opt-in switch; a registry gate reads the claude
+          // version only, so this one is not version-gated: an older copilot would reject it, which
+          // is why the switch is OFF by default and says what it needs.
+          { flag: '--remote', when: { param: 'remoteControl', state: 'set' } },
           { flag: '--yolo', when: { param: 'allowAll', is: true } },
           // `--name` is refused next to `--resume` and `--continue` (copilot 1.0.95: "cannot be used
           // with"), and a resumed session keeps the name it was created with.
@@ -1837,6 +1843,7 @@ const COPILOT: CliEntry = {
       format: 'copilot-json',
       relocation: { envVar: 'COPILOT_HOME', path: 'mcp-config.json' },
     },
+    launchRemoteControl: { setting: 'copilotRemoteControlEnabled' },
     // Every one of these matches the COPILOT_ allowedPrefix, so a non-granted multi-user owner
     // must not be able to set it through envOverrides. Read from the 1.0.98 bundle (copilot reads
     // far more COPILOT_* variables than `copilot help environment` lists), by what each hands back:
