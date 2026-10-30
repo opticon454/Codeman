@@ -634,6 +634,28 @@ describe('DiscordBridge', () => {
       b.stop();
     });
 
+    it('does not post the same message twice when two alerts for one tab overlap', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const b = bridge({}, async (url, init) => {
+        const path = new URL(String(url)).pathname.replace('/api/v10', '');
+        posts.push({ path, method: String(init.method), body: init.body ? JSON.parse(String(init.body)) : undefined });
+        if (path.endsWith('/threads')) return jsonRes({ id: THREAD });
+        if (path.endsWith('/messages')) await gate;
+        return jsonRes({ id: 'msg' });
+      });
+      const full = async () => ({ text: 'The one answer.', version: 'turn-1' });
+      const first = b.notify({ ...MSG, event: 'hook:idle_prompt', fullText: full });
+      await vi.waitFor(() => expect(posts.some((p) => p.path.endsWith('/messages'))).toBe(true));
+      const second = b.notify({ ...MSG, event: 'hook:stop', fullText: full });
+      await new Promise((r) => setTimeout(r, 20));
+      release();
+      await Promise.all([first, second]);
+      const said = posts.filter((p) => p.path.endsWith('/messages')).map((p) => String(p.body?.content));
+      expect(said.filter((c) => c.includes('The one answer.'))).toHaveLength(1);
+      b.stop();
+    });
+
     it('posts a later turn that ends on the same words, but not the same turn twice', async () => {
       const b = bridge();
       await b.notify({ ...MSG, fullText: async () => ({ text: 'Done.', version: 'turn-1' }) });
@@ -1250,6 +1272,24 @@ describe('tablesToCodeBlocks', () => {
     const t1 = Date.now();
     expect(tablesToCodeBlocks(real)).toContain('```');
     expect(Date.now() - t1).toBeLessThan(500);
+  });
+
+  it('leaves a wide or long table as written, quickly: 3000 columns over 3000 one-pipe rows', () => {
+    const wide = [`|${' a |'.repeat(3000)}`, '|---|', ...Array.from({ length: 3000 }, () => '| x |')].join('\n');
+    const t0 = Date.now();
+    expect(tablesToCodeBlocks(wide)).toBe(wide);
+    expect(Date.now() - t0).toBeLessThan(500);
+    const tall = ['| a | b |', '|---|---|', ...Array.from({ length: 300 }, (_, i) => `| ${i} | y |`)].join('\n');
+    expect(tablesToCodeBlocks(tall)).toBe(tall);
+    const big = ['| a |', '|---|', ...Array.from({ length: 200_000 }, () => '| x |')].join('\n');
+    const t1 = Date.now();
+    expect(() => tablesToCodeBlocks(big)).not.toThrow(); // no spread of 200,000 rows into Math.max
+    expect(Date.now() - t1).toBeLessThan(1000);
+  });
+
+  it('keeps a sentence with a pipe under a table out of the code block', () => {
+    const out = tablesToCodeBlocks(['| a | b |', '|---|---|', '| 1 | 2 |', 'Use x | y to pipe.'].join('\n'));
+    expect(out).toBe(['```', 'a  b', '-  -', '1  2', '```', 'Use x | y to pipe.'].join('\n'));
   });
 
   it('pads a short row and keeps an escaped pipe in a cell', () => {

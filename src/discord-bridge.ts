@@ -59,6 +59,9 @@ const STALE_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** At most this many threads closed in one sweep, so a damaged map cannot empty the channel in one go. */
 const STALE_MAX_PER_SWEEP = 25;
 const DISCORD_EPOCH_MS = 1420070400000;
+/** A Markdown table wider or longer than this is posted as it was written, not padded into a code block. */
+const TABLE_MAX_COLS = 24;
+const TABLE_MAX_ROWS = 200;
 /** Reading a CLI's transcript must not hold an alert back for long. */
 const FULL_TEXT_TIMEOUT_MS = 4000;
 
@@ -246,13 +249,38 @@ export function tablesToCodeBlocks(text: string): string {
       out.push(line);
       continue;
     }
+    // Rows belong to the table while they carry a pipe, and start with one when the header does, so a
+    // sentence with a pipe under a table stays prose.
+    const piped = line.trim().startsWith('|');
+    let j = i + 2;
+    while (
+      j < lines.length &&
+      lines[j].trim() !== '' &&
+      lines[j].includes('|') &&
+      (!piped || lines[j].trim().startsWith('|'))
+    ) {
+      j++;
+    }
     const header = cells(line);
+    // A table past these bounds is left as it was (raw pipes): formatting costs columns times rows, and the
+    // text can be steered by whatever the agent read.
+    if (header.length > TABLE_MAX_COLS || j - i - 1 > TABLE_MAX_ROWS) {
+      for (let k = i; k < j; k++) out.push(lines[k]); // a loop: a spread of 200,000 lines overflows the stack
+      i = j - 1;
+      continue;
+    }
     const align = cells(lines[i + 1]).map((c) => (c.endsWith(':') ? 'right' : 'left'));
     const rows = [header];
-    let j = i + 2;
-    for (; j < lines.length && lines[j].includes('|') && lines[j].trim() !== ''; j++) rows.push(cells(lines[j]));
-    const cols = Math.max(...rows.map((r) => r.length));
-    const width = Array.from({ length: cols }, (_, c) => Math.max(1, ...rows.map((r) => [...(r[c] ?? '')].length)));
+    for (let k = i + 2; k < j; k++) rows.push(cells(lines[k]));
+    let cols = 0;
+    for (const r of rows) if (r.length > cols) cols = r.length;
+    if (cols > TABLE_MAX_COLS) {
+      for (let k = i; k < j; k++) out.push(lines[k]); // a loop: a spread of 200,000 lines overflows the stack
+      i = j - 1;
+      continue;
+    }
+    const width = Array.from({ length: cols }, () => 1);
+    for (const r of rows) for (let c = 0; c < r.length; c++) width[c] = Math.max(width[c], [...r[c]].length);
     const pad = (v: string, c: number) => (align[c] === 'right' ? v.padStart(width[c]) : v.padEnd(width[c]));
     const fmt = (r: string[]) =>
       Array.from({ length: cols }, (_, c) => pad((r[c] ?? '').replace(/```/g, '\u2019\u2019\u2019'), c))
@@ -1093,6 +1121,9 @@ export class DiscordBridge {
     if (chunks.length > 0 && post.content.length + 1 + chunks[0].length <= MAX_CONTENT) {
       post.content += `\n${chunks.shift()}`;
     }
+    // Claimed just before the first post and given back if it fails, so an alert for the same tab that
+    // overlaps this one does not post the message too, and a failed post is still sent again.
+    let claimed: { sid: string; before: string | undefined } | undefined;
     try {
       let target = this.cfg.parentChannelId;
       if (msg.sessionId) {
@@ -1101,6 +1132,10 @@ export class DiscordBridge {
         target = thread;
       }
       const send = (to: string) => (msg.file ? this.api.postWithFile(to, post, msg.file) : this.api.post(to, post));
+      if (posted && msg.sessionId) {
+        claimed = { sid: msg.sessionId, before: this.lastFull.get(msg.sessionId) };
+        this.lastFull.set(msg.sessionId, posted);
+      }
       try {
         await send(target);
       } catch (err) {
@@ -1114,10 +1149,14 @@ export class DiscordBridge {
           throw err;
         }
       }
-      if (posted && msg.sessionId) this.lastFull.set(msg.sessionId, posted);
+      // Parts 2 to 8 are best effort on purpose: the first post, which carries the title, is what is reported.
       for (const part of chunks) await this.say(this.threads[msg.sessionId ?? ''] ?? target, part);
       return (this.last = { ok: true, at: this.now() });
     } catch (err) {
+      if (claimed) {
+        if (claimed.before === undefined) this.lastFull.delete(claimed.sid);
+        else this.lastFull.set(claimed.sid, claimed.before);
+      }
       return (this.last = this.fail(err));
     }
   }

@@ -54,9 +54,12 @@ kept, split over several posts if it is long. A shell, and permission or questio
 of the screen instead.
 
 Only some CLIs raise a turn end. Claude Code does (an idle alert by default, and a stop alert when **Which
-events** is Everything), and DeepSeek Harness sends a stop. The others (OpenCode, Gemini, Antigravity, Pi,
-Grok, Copilot) send none, so their messages reach Discord with an error or `codeman notify`; Codex's dialogs
-are read off its screen.
+events** is Everything), and DeepSeek Harness sends a stop. The others (Codex, OMP, OpenCode, Gemini,
+Antigravity, Pi, Grok, Copilot) send none, so their messages reach Discord with an error or `codeman notify`;
+Codex's dialogs are read off its screen.
+
+The stale-thread setting also archives or deletes threads that **When a tab is deleted** kept or archived, because a
+deleted tab's thread leaves the bridge's map.
 
 Deleting a thread needs the **Manage Threads** permission on the channel. "Critical" means a
 permission prompt, a question, an error, or a post an agent marked urgent.
